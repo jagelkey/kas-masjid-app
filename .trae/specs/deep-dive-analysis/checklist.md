@@ -1,0 +1,5 @@
+- [x] Analisis statis dengan `flutter analyze` telah dijalankan dan hasilnya dievaluasi.
+- [x] Logika autentikasi dan manajemen pengguna (user) telah ditinjau mendalam.
+- [x] Logika state management (BLoC/Cubit) pada fitur utama (Aktivitas, Transaksi, Profil) telah diperiksa.
+- [x] Lapisan data (local DB & proses sinkronisasi) telah dianalisis untuk potensi bug.
+- [x] Laporan akhir temuan bug dan evaluasi logika telah ditulis secara lengkap dalam file `ANALYSIS_REPORT.md`.

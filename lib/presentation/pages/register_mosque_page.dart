@@ -1,0 +1,289 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+import 'package:masjid_app/domain/entities/mosque_profile.dart';
+import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart';
+import 'package:masjid_app/presentation/blocs/profile/profile_bloc.dart';
+
+class RegisterMosquePage extends StatefulWidget {
+  const RegisterMosquePage({super.key});
+
+  @override
+  State<RegisterMosquePage> createState() => _RegisterMosquePageState();
+}
+
+class _RegisterMosquePageState extends State<RegisterMosquePage> {
+  final _mosqueNameController = TextEditingController();
+  final _mosqueAddressController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  bool _isPasswordVisible = false;
+
+  // To track if we are in the process of saving profile after auth
+  bool _isSavingProfile = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text(
+          'Daftar Masjid Baru',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black87),
+      ),
+      body: MultiBlocListener(
+        listeners: [
+          BlocListener<AuthBloc, AuthState>(
+            listener: (context, state) {
+              if (state is Authenticated || state is AuthOffline) {
+                // Auth success, now save mosque profile
+                setState(() {
+                  _isSavingProfile = true;
+                });
+                context.read<ProfileBloc>().add(
+                  SaveProfile(
+                    MosqueProfile(
+                      name: _mosqueNameController.text,
+                      address: _mosqueAddressController.text,
+                    ),
+                  ),
+                );
+              } else if (state is AuthError) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(state.message)));
+              }
+            },
+          ),
+          BlocListener<ProfileBloc, ProfileState>(
+            listener: (context, state) {
+              if (_isSavingProfile) {
+                if (state is ProfileLoaded) {
+                  // Both Auth and Profile Save successful
+                  context.go('/');
+                } else if (state is ProfileError) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Gagal menyimpan profil masjid: ${state.message}',
+                      ),
+                    ),
+                  );
+                  // Even if profile save fails, user is created, so maybe go to dashboard anyway?
+                  // Or let them retry? For now let's go to dashboard as fallback
+                  context.go('/');
+                }
+              }
+            },
+          ),
+        ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSectionCard(
+                  title: 'Informasi Masjid',
+                  icon: Icons.mosque_outlined,
+                  children: [
+                    TextFormField(
+                      controller: _mosqueNameController,
+                      decoration: _buildInputDecoration(
+                        'Nama Masjid',
+                        Icons.home_filled,
+                      ),
+                      validator: (value) =>
+                          value!.isEmpty ? 'Nama masjid wajib diisi' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _mosqueAddressController,
+                      decoration: _buildInputDecoration(
+                        'Alamat Masjid',
+                        Icons.location_on_outlined,
+                      ),
+                      maxLines: 2,
+                      validator: (value) =>
+                          value!.isEmpty ? 'Alamat masjid wajib diisi' : null,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _buildSectionCard(
+                  title: 'Informasi Admin (Ketua)',
+                  icon: Icons.person_outline_rounded,
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: _buildInputDecoration(
+                        'Nama Lengkap Admin',
+                        Icons.badge_outlined,
+                      ),
+                      validator: (value) =>
+                          value!.isEmpty ? 'Nama admin wajib diisi' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _usernameController,
+                      decoration: _buildInputDecoration(
+                        'Username',
+                        Icons.alternate_email_rounded,
+                      ),
+                      validator: (value) =>
+                          value!.isEmpty ? 'Username wajib diisi' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _emailController,
+                      decoration: _buildInputDecoration(
+                        'Email',
+                        Icons.email_outlined,
+                      ),
+                      validator: (value) =>
+                          value!.isEmpty ? 'Email wajib diisi' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: !_isPasswordVisible,
+                      decoration:
+                          _buildInputDecoration(
+                            'Password',
+                            Icons.lock_outline_rounded,
+                          ).copyWith(
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _isPasswordVisible
+                                    ? Icons.visibility_rounded
+                                    : Icons.visibility_off_rounded,
+                                size: 20,
+                              ),
+                              onPressed: () => setState(
+                                () => _isPasswordVisible = !_isPasswordVisible,
+                              ),
+                            ),
+                          ),
+                      validator: (value) =>
+                          value!.isEmpty ? 'Password wajib diisi' : null,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+                BlocBuilder<AuthBloc, AuthState>(
+                  builder: (context, state) {
+                    if (state is AuthLoading || _isSavingProfile) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return FilledButton(
+                      onPressed: () {
+                        if (_formKey.currentState!.validate()) {
+                          context.read<AuthBloc>().add(
+                            RegisterRequested(
+                              name: _nameController.text,
+                              username: _usernameController.text,
+                              email: _emailController.text,
+                              password: _passwordController.text,
+                              // Default role is Admin in AuthBloc, which matches requirements
+                            ),
+                          );
+                        }
+                      },
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Daftarkan Masjid',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: Colors.green, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16.0),
+              child: Divider(height: 1),
+            ),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _buildInputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, size: 20),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      filled: true,
+      fillColor: Colors.grey[50],
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+    );
+  }
+}
