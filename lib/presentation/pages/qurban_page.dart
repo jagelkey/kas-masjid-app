@@ -214,63 +214,69 @@ class QurbanParticipantDetailPage extends StatelessWidget {
                   ),
               ],
             ),
-            body: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _ParticipantDetailCard(progress: currentProgress),
-                const SizedBox(height: 16),
-                Text(
-                  'Timeline 10 Bulan',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                _PaymentTimeline(progress: currentProgress),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Histori Pembayaran',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    if (canManage)
-                      FilledButton.icon(
-                        onPressed: () => context.push(
-                          '/qurban/payment/add',
-                          extra: participant,
-                        ),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Bayar'),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (currentProgress.payments.isEmpty)
-                  const Text('Belum ada pembayaran')
-                else
-                  ..._sortedPayments(currentProgress.payments).map(
-                    (payment) => Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.payments_outlined),
-                        title: Text(_currency.format(payment.amount)),
-                        subtitle: Text(
-                          '${DateFormat('dd MMM yyyy', 'id_ID').format(payment.paymentDate)}'
-                          '${payment.note == null ? '' : ' - ${payment.note}'}',
-                        ),
-                        trailing: payment.syncStatus == SyncStatus.synced
-                            ? null
-                            : const Icon(Icons.cloud_upload_outlined, size: 18),
-                        onTap: canManage
-                            ? () => _showPaymentOptions(
-                                context,
-                                participant,
-                                payment,
-                              )
-                            : null,
-                      ),
-                    ),
+            body: SafeArea(
+              top: false,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                children: [
+                  _ParticipantDetailCard(progress: currentProgress),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Timeline 10 Bulan',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-              ],
+                  const SizedBox(height: 8),
+                  _PaymentTimeline(progress: currentProgress),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Histori Pembayaran',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (canManage)
+                        FilledButton.icon(
+                          onPressed: () => context.push(
+                            '/qurban/payment/add',
+                            extra: participant,
+                          ),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Bayar'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (currentProgress.payments.isEmpty)
+                    const Text('Belum ada pembayaran')
+                  else
+                    ..._sortedPayments(currentProgress.payments).map(
+                      (payment) => Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.payments_outlined),
+                          title: Text(_currency.format(payment.amount)),
+                          subtitle: Text(
+                            '${DateFormat('dd MMM yyyy', 'id_ID').format(payment.paymentDate)}'
+                            '${payment.note == null ? '' : ' - ${payment.note}'}',
+                          ),
+                          trailing: payment.syncStatus == SyncStatus.synced
+                              ? null
+                              : const Icon(
+                                  Icons.cloud_upload_outlined,
+                                  size: 18,
+                                ),
+                          onTap: canManage
+                              ? () => _showPaymentOptions(
+                                  context,
+                                  participant,
+                                  payment,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           );
         },
