@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
-import 'package:masjid_app/core/constants/env.dart';
+import 'package:masjid_app/core/services/admin_user_service.dart';
 import 'package:masjid_app/data/datasources/local/auth_local_datasource.dart';
 import 'package:masjid_app/domain/entities/transaction.dart' as domain_status;
 import 'package:masjid_app/domain/entities/user.dart';
@@ -21,6 +21,14 @@ class UserListPage extends StatefulWidget {
 class _UserListPageState extends State<UserListPage> {
   final _userRepository = GetIt.I<UserRepository>();
   final _authLocalDatasource = GetIt.I<AuthLocalDatasource>();
+
+  AdminUserService _adminUserService() {
+    try {
+      return AdminUserService(Supabase.instance.client);
+    } catch (_) {
+      return const AdminUserService(null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,27 +242,20 @@ class _UserListPageState extends State<UserListPage> {
           connectivityResult.contains(ConnectivityResult.mobile) ||
           connectivityResult.contains(ConnectivityResult.wifi);
 
-      if (isOnline && Env.supabaseServiceRoleKey.isNotEmpty) {
+      if (isOnline) {
         try {
-          final adminClient = SupabaseClient(
-            Env.supabaseUrl,
-            Env.supabaseServiceRoleKey,
+          final result = await _adminUserService().createUser(
+            email: email,
+            password: password,
+            fullName: name,
+            username: normalizedUsername,
+            role: role,
           );
-          final response = await adminClient.auth.admin.createUser(
-            AdminUserAttributes(
-              email: email,
-              password: password,
-              emailConfirm: true,
-              userMetadata: {
-                'full_name': name,
-                'username': normalizedUsername,
-                'role': role,
-              },
-            ),
-          );
-          if (response.user != null) {
-            userId = response.user!.id;
+          if (result.isSuccess && result.userId != null) {
+            userId = result.userId!;
             syncStatus = domain_status.SyncStatus.synced.index;
+          } else {
+            throw Exception(result.message ?? 'Admin user backend gagal');
           }
         } catch (e) {
           debugPrint('Gagal create user online: $e');
@@ -398,6 +399,23 @@ class _UserListPageState extends State<UserListPage> {
   }
 
   void _confirmDeleteUser(UserEntity user) {
+    final authState = context.read<AuthBloc>().state;
+    String? currentUserId;
+    if (authState is Authenticated) {
+      currentUserId = authState.user.id;
+    } else if (authState is AuthOffline) {
+      currentUserId = authState.user.id;
+    }
+
+    if (user.remoteId == currentUserId && currentUserId != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Anda tidak dapat menghapus akun Anda sendiri'),
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -580,33 +598,22 @@ class _UserListPageState extends State<UserListPage> {
 
       // Handle Pending Create User (Promote to Online)
       if (user.syncStatus == domain_status.SyncStatus.pendingCreate.index) {
-        if (isOnline &&
-            Env.supabaseServiceRoleKey.isNotEmpty &&
-            password.isNotEmpty) {
+        if (isOnline && password.isNotEmpty) {
           try {
-            final adminClient = SupabaseClient(
-              Env.supabaseUrl,
-              Env.supabaseServiceRoleKey,
-            );
-            final response = await adminClient.auth.admin.createUser(
-              AdminUserAttributes(
-                email: email,
-                password: password,
-                emailConfirm: true,
-                userMetadata: {
-                  'full_name': name,
-                  'username': username,
-                  'role': role,
-                },
-              ),
+            final result = await _adminUserService().createUser(
+              email: email,
+              password: password,
+              fullName: name,
+              username: username.trim().toLowerCase(),
+              role: role,
             );
 
-            if (response.user != null) {
+            if (result.isSuccess && result.userId != null) {
               final updatedUser = UserEntity(
                 id: user.id,
-                remoteId: response.user!.id,
+                remoteId: result.userId!,
                 email: email,
-                username: username,
+                username: username.trim().toLowerCase(),
                 fullName: name,
                 role: role,
                 syncStatus: domain_status.SyncStatus.synced.index,
@@ -644,15 +651,27 @@ class _UserListPageState extends State<UserListPage> {
           return;
         }
 
-        if (Env.supabaseServiceRoleKey.isNotEmpty && user.remoteId != null) {
-          final adminClient = SupabaseClient(
-            Env.supabaseUrl,
-            Env.supabaseServiceRoleKey,
+        if (user.remoteId != null) {
+          final result = await _adminUserService().updateUser(
+            userId: user.remoteId!,
+            email: email,
+            fullName: name,
+            username: username.trim().toLowerCase(),
+            role: role,
+            password: password,
           );
-          await adminClient.auth.admin.updateUserById(
-            user.remoteId!,
-            attributes: AdminUserAttributes(password: password),
-          );
+          if (!result.isSuccess) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Gagal update password online: ${result.message}',
+                  ),
+                ),
+              );
+            }
+            return;
+          }
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -677,7 +696,7 @@ class _UserListPageState extends State<UserListPage> {
         id: user.id,
         remoteId: user.remoteId,
         email: email,
-        username: username,
+        username: username.trim().toLowerCase(),
         fullName: name,
         role: role,
         syncStatus: newSyncStatus,

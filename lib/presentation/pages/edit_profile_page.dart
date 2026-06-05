@@ -160,7 +160,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               const SizedBox(height: 16),
               if (password.isNotEmpty) ...[
                 const Text(
-                  '⚠️ Password akan diubah',
+                  'Password akan diubah',
                   style: TextStyle(
                     color: Colors.orange,
                     fontWeight: FontWeight.bold,
@@ -270,7 +270,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Wajib diisi';
-                    if (!value.contains('@')) return 'Email tidak valid';
                     if (!RegExp(
                       r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
                     ).hasMatch(value)) {

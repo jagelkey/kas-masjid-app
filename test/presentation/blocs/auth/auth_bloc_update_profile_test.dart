@@ -3,7 +3,6 @@ import 'package:masjid_app/data/datasources/local/app_database.dart';
 import 'package:masjid_app/data/datasources/local/auth_local_datasource.dart';
 import 'package:masjid_app/domain/entities/user.dart' as domain;
 import 'package:masjid_app/domain/repositories/user_repository.dart';
-import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart' as local_auth;
 import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
@@ -22,6 +21,10 @@ void main() {
     mockLocalDatasource = MockAuthLocalDatasource();
     mockAppDatabase = MockAppDatabase();
     mockUserRepository = MockUserRepository();
+
+    when(
+      mockLocalDatasource.getLastLoggedInUser(),
+    ).thenAnswer((_) async => null);
 
     authBloc = AuthBloc(
       mockLocalDatasource,
@@ -55,17 +58,12 @@ void main() {
       authBloc.emit(Unauthenticated());
 
       // Act & Assert
-      await expectLater(
+      final expectation = expectLater(
         authBloc.stream,
-        emitsInOrder([isA<Unauthenticated>()]),
+        emits(const AuthError('User tidak terautentikasi')),
       );
-
       authBloc.add(const UpdateProfileRequested(fullName: 'New Name'));
-
-      await expectLater(
-        authBloc.stream,
-        emitsInOrder([const AuthError('User tidak terautentikasi')]),
-      );
+      await expectation;
     });
 
     test('should emit AuthError when password is too short', () async {
@@ -98,7 +96,6 @@ void main() {
         emitsInOrder([
           isA<AuthLoading>(),
           const AuthError('Password minimal 6 karakter'),
-          isA<local_auth.AuthState>(), // CheckAuthStatus will emit a state
         ]),
       );
     });
@@ -133,7 +130,6 @@ void main() {
         emitsInOrder([
           isA<AuthLoading>(),
           const AuthError('Format email tidak valid'),
-          isA<local_auth.AuthState>(),
         ]),
       );
     });
@@ -168,7 +164,6 @@ void main() {
         emitsInOrder([
           isA<AuthLoading>(),
           const AuthError('Username minimal 3 karakter'),
-          isA<local_auth.AuthState>(),
         ]),
       );
     });
@@ -207,7 +202,6 @@ void main() {
             const AuthError(
               'Username hanya boleh huruf, angka, dan underscore',
             ),
-            isA<local_auth.AuthState>(),
           ]),
         );
       },
@@ -257,7 +251,6 @@ void main() {
         emitsInOrder([
           isA<AuthLoading>(),
           const AuthError('Email sudah digunakan user lain'),
-          isA<local_auth.AuthState>(),
         ]),
       );
     });
@@ -304,7 +297,6 @@ void main() {
         emitsInOrder([
           isA<AuthLoading>(),
           const AuthError('Username sudah digunakan user lain'),
-          isA<local_auth.AuthState>(),
         ]),
       );
     });
@@ -362,7 +354,6 @@ void main() {
         emitsInOrder([
           isA<AuthLoading>(),
           const AuthSuccess('Profil berhasil diperbarui'),
-          isA<local_auth.AuthState>(), // CheckAuthStatus
         ]),
       );
 

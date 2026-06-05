@@ -53,9 +53,56 @@ class Transactions extends Table {
   TextColumn get proofUrls => text()
       .map(const StringListConverter())
       .withDefault(const Constant('[]'))(); // Remote URLs
+  TextColumn get source => text().withDefault(const Constant('manual'))();
+  TextColumn get sourceRef => text().nullable()();
   IntColumn get syncStatus => intEnum<domain_status.SyncStatus>().withDefault(
     const Constant(1),
   )(); // Default: PendingCreate
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+}
+
+@DataClassName('QurbanPackageEntity')
+class QurbanPackages extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get remoteId => text().nullable()();
+  TextColumn get name => text()();
+  RealColumn get monthlyAmount => real()();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  IntColumn get syncStatus =>
+      intEnum<domain_status.SyncStatus>().withDefault(const Constant(1))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+}
+
+@DataClassName('QurbanParticipantEntity')
+class QurbanParticipants extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get remoteId => text().nullable()();
+  TextColumn get name => text()();
+  TextColumn get phone => text().nullable()();
+  TextColumn get address => text().nullable()();
+  TextColumn get notes => text().nullable()();
+  DateTimeColumn get startMonth => dateTime()();
+  RealColumn get monthlyAmount => real()();
+  IntColumn get totalMonths => integer().withDefault(const Constant(10))();
+  IntColumn get syncStatus =>
+      intEnum<domain_status.SyncStatus>().withDefault(const Constant(1))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+}
+
+@DataClassName('QurbanPaymentEntity')
+class QurbanPayments extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get remoteId => text().nullable()();
+  IntColumn get participantId => integer()();
+  IntColumn get transactionId => integer().nullable()();
+  RealColumn get amount => real()();
+  DateTimeColumn get paymentDate => dateTime()();
+  TextColumn get note => text().nullable()();
+  IntColumn get syncStatus =>
+      intEnum<domain_status.SyncStatus>().withDefault(const Constant(1))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().nullable()();
 }
@@ -118,7 +165,16 @@ class AuditLogs extends Table {
 }
 
 @DriftDatabase(
-  tables: [Transactions, Activities, MosqueProfiles, Users, AuditLogs],
+  tables: [
+    Transactions,
+    Activities,
+    MosqueProfiles,
+    Users,
+    AuditLogs,
+    QurbanPackages,
+    QurbanParticipants,
+    QurbanPayments,
+  ],
 )
 @singleton
 class AppDatabase extends _$AppDatabase {
@@ -138,7 +194,7 @@ class AppDatabase extends _$AppDatabase {
       );
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration {
@@ -177,6 +233,23 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(users, users.username);
           } catch (_) {}
         }
+        if (from < 6) {
+          try {
+            await m.addColumn(transactions, transactions.source);
+          } catch (_) {}
+          try {
+            await m.addColumn(transactions, transactions.sourceRef);
+          } catch (_) {}
+          try {
+            await m.createTable(qurbanPackages);
+          } catch (_) {}
+          try {
+            await m.createTable(qurbanParticipants);
+          } catch (_) {}
+          try {
+            await m.createTable(qurbanPayments);
+          } catch (_) {}
+        }
 
         // Ensure new tables are created during upgrade
         // Check if auditLogs table exists, if not create it
@@ -190,8 +263,35 @@ class AppDatabase extends _$AppDatabase {
       },
       beforeOpen: (details) async {
         await customStatement('PRAGMA foreign_keys = ON');
+        await _seedDefaultQurbanPackages();
       },
     );
+  }
+
+  Future<void> _seedDefaultQurbanPackages() async {
+    final countExp = qurbanPackages.id.count();
+    final row = await (selectOnly(
+      qurbanPackages,
+    )..addColumns([countExp])).getSingle();
+    final count = row.read(countExp) ?? 0;
+    if (count > 0) return;
+
+    await batch((batch) {
+      batch.insertAll(qurbanPackages, [
+        QurbanPackagesCompanion.insert(
+          remoteId: const Value('00000000-0000-4000-8000-000000250000'),
+          name: 'Paket Qurban 250K',
+          monthlyAmount: 250000,
+          syncStatus: const Value(domain_status.SyncStatus.pendingCreate),
+        ),
+        QurbanPackagesCompanion.insert(
+          remoteId: const Value('00000000-0000-4000-8000-000000275000'),
+          name: 'Paket Qurban 275K',
+          monthlyAmount: 275000,
+          syncStatus: const Value(domain_status.SyncStatus.pendingCreate),
+        ),
+      ]);
+    });
   }
 
   Future<void> clearAllData() {
@@ -200,6 +300,9 @@ class AppDatabase extends _$AppDatabase {
       await delete(activities).go();
       await delete(mosqueProfiles).go();
       await delete(users).go();
+      await delete(qurbanPayments).go();
+      await delete(qurbanParticipants).go();
+      await delete(qurbanPackages).go();
     });
   }
 }

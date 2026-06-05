@@ -1,81 +1,52 @@
-import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
-// NOTE: This test is expected to fail at the "User Creation" step due to a
-// Backend Configuration Issue (500 Internal Server Error).
-// The trigger 'handle_new_user' on Supabase seems to be broken or conflicting with 'public.profiles'.
-//
-// Use 'test/local_logic_test.dart' to verify the app logic.
-// Use 'test/backend_diagnostic_test.dart' to verify connectivity.
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:masjid_app/data/datasources/local/app_database.dart';
 import 'package:masjid_app/data/datasources/remote/sync_service.dart';
 import 'package:masjid_app/domain/entities/transaction.dart' as domain;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
+  const supabaseUrl = String.fromEnvironment('TEST_SUPABASE_URL');
+  const supabaseAnonKey = String.fromEnvironment('TEST_SUPABASE_ANON_KEY');
+  const testEmail = String.fromEnvironment('TEST_SUPABASE_EMAIL');
+  const testPassword = String.fromEnvironment('TEST_SUPABASE_PASSWORD');
+
+  final hasRemoteConfig =
+      supabaseUrl.isNotEmpty &&
+      supabaseAnonKey.isNotEmpty &&
+      testEmail.isNotEmpty &&
+      testPassword.isNotEmpty;
+
   late AppDatabase db;
   late SyncService syncService;
-  late SupabaseClient supabase;
+  SupabaseClient? supabase;
 
-  // Use unique category for cleanup
   final testCategory =
       'INTEGRATION_TEST_${DateTime.now().millisecondsSinceEpoch}';
-  final testEmail = 'test_${DateTime.now().millisecondsSinceEpoch}@example.com';
-  final testPassword = 'TestPassword123!';
 
   setUpAll(() async {
-    // Fix MissingPluginException for SharedPreferences
-    SharedPreferences.setMockInitialValues({});
-
-    // Initialize Supabase with Service Role Key to bypass restrictions and use Admin API
-    await Supabase.initialize(
-      url: 'https://your-project-url.supabase.co',
-      anonKey:
-          'your-supabase-jwt',
-      // Disable auth persistence for test to avoid issues
-      authOptions: const FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.implicit,
-      ),
-    );
-    supabase = Supabase.instance.client;
-
-    // Authenticate
-    try {
-      debugPrint('Attempting to create user with Admin API...');
-      try {
-        // Try to create a user with admin privileges (auto-confirm)
-        await supabase.auth.admin.createUser(
-          AdminUserAttributes(
-            email: testEmail,
-            password: testPassword,
-            emailConfirm: true,
-            userMetadata: {
-              'full_name': 'Test User',
-              'username': 'testuser_${DateTime.now().millisecondsSinceEpoch}',
-            },
-          ),
-        );
-        debugPrint('User created via Admin API.');
-      } catch (e) {
-        // If user already exists or other error
-        debugPrint('Admin create user result: $e');
-      }
-
-      debugPrint('Attempting Sign In...');
-      await supabase.auth.signInWithPassword(
-        email: testEmail,
-        password: testPassword,
+    if (!hasRemoteConfig) {
+      debugPrint(
+        'Skipping remote sync integration setup. Provide TEST_SUPABASE_URL, '
+        'TEST_SUPABASE_ANON_KEY, TEST_SUPABASE_EMAIL, and '
+        'TEST_SUPABASE_PASSWORD with --dart-define to enable it.',
       );
-    } catch (e) {
-      debugPrint('Authentication failed: $e');
+      return;
     }
+
+    SharedPreferences.setMockInitialValues({});
+    await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+    supabase = Supabase.instance.client;
+    await supabase!.auth.signInWithPassword(
+      email: testEmail,
+      password: testPassword,
+    );
   });
 
   setUp(() {
-    // Use in-memory database for isolation
     db = AppDatabase(NativeDatabase.memory());
     syncService = SyncService(db);
   });
@@ -85,27 +56,21 @@ void main() {
   });
 
   tearDownAll(() async {
-    // Clean up remote data
+    final client = supabase;
+    if (client == null) return;
     try {
-      await supabase.from('transactions').delete().eq('category', testCategory);
+      await client.from('transactions').delete().eq('category', testCategory);
+      await client.auth.signOut();
     } catch (e) {
-      debugPrint('Cleanup failed: $e');
+      debugPrint('Remote integration cleanup failed: $e');
     }
-
-    // Sign out
-    await supabase.auth.signOut();
   });
 
   test('Full Sync Cycle: Local Insert -> Push -> Remote Verify', () async {
-    // Check if authenticated
-    if (supabase.auth.currentSession == null) {
-      // If we couldn't authenticate, we can't test sync fully if it requires auth.
-      // But we can test the "Failure" case.
-      debugPrint('Skipping full sync test due to authentication failure.');
+    if (!hasRemoteConfig || supabase == null) {
       return;
     }
 
-    // 1. Local Insert
     final localId = await db
         .into(db.transactions)
         .insert(
@@ -119,32 +84,26 @@ void main() {
           ),
         );
 
-    // Verify local status
     final localTx = await (db.select(
       db.transactions,
     )..where((t) => t.id.equals(localId))).getSingle();
     expect(localTx.syncStatus, domain.SyncStatus.pendingCreate);
     expect(localTx.remoteId, isNull);
 
-    // 2. Sync (Push)
     final result = await syncService.syncData();
-
-    // Check for sync errors
     if (!result.isSuccess) {
       debugPrint('Sync Errors: ${result.errors}');
     }
 
     expect(result.isSuccess, isTrue);
 
-    // 3. Verify Local Status Update
     final syncedTx = await (db.select(
       db.transactions,
     )..where((t) => t.id.equals(localId))).getSingle();
     expect(syncedTx.syncStatus, domain.SyncStatus.synced);
     expect(syncedTx.remoteId, isNotNull);
 
-    // 4. Verify Remote Data
-    final remoteTx = await supabase
+    final remoteTx = await supabase!
         .from('transactions')
         .select()
         .eq('id', syncedTx.remoteId!)
@@ -152,7 +111,6 @@ void main() {
 
     expect(remoteTx, isNotNull);
     expect(remoteTx!['category'], testCategory);
-    // Remote amount might be number or double depending on JSON decoding
     expect((remoteTx['amount'] as num).toDouble(), 10000.0);
   });
 }

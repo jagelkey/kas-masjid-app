@@ -23,5 +23,14 @@ class Activity extends Equatable {
   });
 
   @override
-  List<Object?> get props => [id, remoteId, title, description, type, date, picName, syncStatus];
+  List<Object?> get props => [
+    id,
+    remoteId,
+    title,
+    description,
+    type,
+    date,
+    picName,
+    syncStatus,
+  ];
 }

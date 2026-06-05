@@ -72,6 +72,8 @@ class TransactionRepositoryImpl implements TransactionRepository {
             date: Value(transaction.date),
             proofPaths: Value(transaction.proofPaths),
             proofUrls: Value(transaction.proofUrls),
+            source: Value(transaction.source),
+            sourceRef: Value(transaction.sourceRef),
             syncStatus: Value(domain.SyncStatus.pendingCreate),
           ),
         );
@@ -94,8 +96,13 @@ class TransactionRepositoryImpl implements TransactionRepository {
     )..where((t) => t.id.equals(transaction.id!))).getSingleOrNull();
 
     if (existing == null) return;
+    if (existing.source == domain.TransactionSource.qurban) {
+      throw Exception(
+        'Transaksi iuran qurban hanya bisa diedit dari menu Qurban',
+      );
+    }
 
-    final newSyncStatus = existing.remoteId == null
+    final newSyncStatus = existing.syncStatus == domain.SyncStatus.pendingCreate
         ? domain.SyncStatus.pendingCreate
         : domain.SyncStatus.pendingUpdate;
 
@@ -110,6 +117,8 @@ class TransactionRepositoryImpl implements TransactionRepository {
         date: Value(transaction.date),
         proofPaths: Value(transaction.proofPaths),
         proofUrls: Value(transaction.proofUrls),
+        source: Value(transaction.source),
+        sourceRef: Value(transaction.sourceRef),
         syncStatus: Value(newSyncStatus),
         updatedAt: Value(DateTime.now()),
       ),
@@ -133,6 +142,11 @@ class TransactionRepositoryImpl implements TransactionRepository {
       _db.transactions,
     )..where((t) => t.id.equals(id))).getSingleOrNull();
     if (transaction == null) return;
+    if (transaction.source == domain.TransactionSource.qurban) {
+      throw Exception(
+        'Transaksi iuran qurban hanya bisa dihapus dari menu Qurban',
+      );
+    }
 
     if (transaction.remoteId != null) {
       // Mark for deletion on server
@@ -191,9 +205,11 @@ class TransactionRepositoryImpl implements TransactionRepository {
     final now = DateTime.now();
     final startOfMonth = DateTime(now.year, now.month, 1);
     // Move to first day of next month and subtract 1 second to get the very end of current month
-    final endOfMonth = DateTime(now.year, now.month + 1, 1).subtract(
-      const Duration(seconds: 1),
-    );
+    final endOfMonth = DateTime(
+      now.year,
+      now.month + 1,
+      1,
+    ).subtract(const Duration(seconds: 1));
 
     final query = _db.select(_db.transactions)
       ..where((t) => t.type.equalsValue(domain.TransactionType.income))
@@ -210,9 +226,11 @@ class TransactionRepositoryImpl implements TransactionRepository {
   Future<double> getExpenseThisMonth() async {
     final now = DateTime.now();
     final startOfMonth = DateTime(now.year, now.month, 1);
-    final endOfMonth = DateTime(now.year, now.month + 1, 1).subtract(
-      const Duration(seconds: 1),
-    );
+    final endOfMonth = DateTime(
+      now.year,
+      now.month + 1,
+      1,
+    ).subtract(const Duration(seconds: 1));
 
     final query = _db.select(_db.transactions)
       ..where((t) => t.type.equalsValue(domain.TransactionType.expense))
@@ -237,6 +255,8 @@ class TransactionRepositoryImpl implements TransactionRepository {
       date: row.date,
       proofPaths: row.proofPaths,
       proofUrls: row.proofUrls,
+      source: row.source,
+      sourceRef: row.sourceRef,
       syncStatus: row.syncStatus,
     );
   }

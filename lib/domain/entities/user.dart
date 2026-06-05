@@ -7,7 +7,8 @@ class UserEntity extends Equatable {
   final String? username;
   final String? fullName;
   final String role; // admin, ketua, bendahara, sekretaris, viewer
-  final int syncStatus; // 0: Synced, 1: PendingCreate, 2: PendingUpdate, 3: PendingDelete
+  final int
+  syncStatus; // 0: Synced, 1: PendingCreate, 2: PendingUpdate, 3: PendingDelete
 
   const UserEntity({
     this.id,
@@ -20,8 +21,15 @@ class UserEntity extends Equatable {
   });
 
   @override
-  List<Object?> get props =>
-      [id, remoteId, email, username, fullName, role, syncStatus];
+  List<Object?> get props => [
+    id,
+    remoteId,
+    email,
+    username,
+    fullName,
+    role,
+    syncStatus,
+  ];
 
   UserEntity copyWith({
     int? id,

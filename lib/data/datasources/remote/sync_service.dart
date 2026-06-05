@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:injectable/injectable.dart';
 import 'package:get_it/get_it.dart';
 import 'package:masjid_app/core/constants/env.dart';
+import 'package:masjid_app/core/services/admin_user_service.dart';
 import 'package:masjid_app/data/datasources/local/app_database.dart';
 import 'package:masjid_app/data/datasources/local/auth_local_datasource.dart';
 import 'package:masjid_app/domain/entities/transaction.dart' as domain;
@@ -118,7 +119,7 @@ class SyncService {
 
   final AppDatabase _db;
   late final SupabaseClient? _supabase;
-  late final SupabaseClient? _adminSupabase;
+  late final AdminUserService _adminUserService;
   StreamSubscription? _connectivitySubscription;
 
   bool _isSyncing = false;
@@ -133,14 +134,7 @@ class SyncService {
   SyncService(this._db) {
     try {
       _supabase = Supabase.instance.client;
-      if (Env.supabaseServiceRoleKey.isNotEmpty) {
-        _adminSupabase = SupabaseClient(
-          Env.supabaseUrl,
-          Env.supabaseServiceRoleKey,
-        );
-      } else {
-        _adminSupabase = null;
-      }
+      _adminUserService = AdminUserService(_supabase);
 
       // Only listen to connectivity if Supabase is initialized
       if (_supabase != null) {
@@ -148,7 +142,7 @@ class SyncService {
       }
     } catch (_) {
       _supabase = null;
-      _adminSupabase = null;
+      _adminUserService = const AdminUserService(null);
     }
   }
 
@@ -202,6 +196,12 @@ class SyncService {
       try {
         allErrors.addAll(await _pushTransactions());
         allErrors.addAll(await _pullTransactions());
+        allErrors.addAll(await _pushQurbanPackages());
+        allErrors.addAll(await _pullQurbanPackages());
+        allErrors.addAll(await _pushQurbanParticipants());
+        allErrors.addAll(await _pullQurbanParticipants());
+        allErrors.addAll(await _pushQurbanPayments());
+        allErrors.addAll(await _pullQurbanPayments());
         allErrors.addAll(await _pushActivities());
         allErrors.addAll(await _pullActivities());
         allErrors.addAll(await _pushMosqueProfile());
@@ -299,6 +299,8 @@ class SyncService {
             'description': t.description,
             'transaction_date': t.date.toIso8601String(),
             'proof_url': mergedUrls.isEmpty ? null : mergedUrls,
+            'source': t.source,
+            'source_ref': t.sourceRef,
           };
 
           final response = await _supabase!
@@ -361,6 +363,8 @@ class SyncService {
                 'description': t.description,
                 'transaction_date': t.date.toIso8601String(),
                 'proof_url': mergedUrls.isEmpty ? null : mergedUrls,
+                'source': t.source,
+                'source_ref': t.sourceRef,
               })
               .eq('id', t.remoteId!)
               .select()
@@ -457,6 +461,11 @@ class SyncService {
                   description: Value(remote['description']),
                   date: Value(DateTime.parse(remote['transaction_date'])),
                   proofUrls: Value(remoteProofUrls),
+                  source: Value(
+                    remote['source']?.toString() ??
+                        domain.TransactionSource.manual,
+                  ),
+                  sourceRef: Value(remote['source_ref']?.toString()),
                   syncStatus: Value(domain.SyncStatus.synced),
                   updatedAt: Value(remoteUpdatedAt),
                 ),
@@ -479,6 +488,11 @@ class SyncService {
                 description: Value(remote['description']),
                 date: Value(DateTime.parse(remote['transaction_date'])),
                 proofUrls: Value(remoteProofUrls),
+                source: Value(
+                  remote['source']?.toString() ??
+                      domain.TransactionSource.manual,
+                ),
+                sourceRef: Value(remote['source_ref']?.toString()),
                 updatedAt: Value(remoteUpdatedAt),
               ),
             );
@@ -487,6 +501,432 @@ class SyncService {
       }
     } catch (e) {
       final msg = 'Gagal pull transaksi: $e';
+      debugPrint(msg);
+      errors.add(msg);
+    }
+    return errors;
+  }
+
+  // --- Qurban Sync ---
+
+  Future<List<String>> _pushQurbanPackages() async {
+    final errors = <String>[];
+    final pending =
+        await (_db.select(_db.qurbanPackages)..where(
+              (t) => t.syncStatus.isNotValue(domain.SyncStatus.synced.index),
+            ))
+            .get();
+
+    for (final package in pending) {
+      try {
+        if (package.syncStatus == domain.SyncStatus.pendingDelete) {
+          if (package.remoteId != null) {
+            await _supabase!
+                .from('qurban_packages')
+                .delete()
+                .eq('id', package.remoteId!);
+          }
+          await (_db.delete(
+            _db.qurbanPackages,
+          )..where((r) => r.id.equals(package.id))).go();
+          continue;
+        }
+
+        final remoteId = package.remoteId ?? const Uuid().v4();
+        if (package.remoteId == null) {
+          await (_db.update(_db.qurbanPackages)
+                ..where((r) => r.id.equals(package.id)))
+              .write(QurbanPackagesCompanion(remoteId: Value(remoteId)));
+        }
+
+        final data = {
+          'id': remoteId,
+          'name': package.name,
+          'monthly_amount': package.monthlyAmount,
+          'is_active': package.isActive,
+        };
+
+        final response = package.syncStatus == domain.SyncStatus.pendingUpdate
+            ? await _supabase!
+                  .from('qurban_packages')
+                  .update(data)
+                  .eq('id', remoteId)
+                  .select()
+                  .single()
+            : await _supabase!
+                  .from('qurban_packages')
+                  .upsert(data)
+                  .select()
+                  .single();
+
+        await (_db.update(
+          _db.qurbanPackages,
+        )..where((r) => r.id.equals(package.id))).write(
+          QurbanPackagesCompanion(
+            remoteId: Value(response['id']),
+            syncStatus: Value(domain.SyncStatus.synced),
+            updatedAt: Value(DateTime.tryParse(response['updated_at'] ?? '')),
+          ),
+        );
+      } catch (e) {
+        final msg = 'Gagal sync paket qurban ${package.name}: $e';
+        debugPrint(msg);
+        errors.add(msg);
+      }
+    }
+    return errors;
+  }
+
+  Future<List<String>> _pullQurbanPackages() async {
+    final errors = <String>[];
+    try {
+      final response = await _supabase!.from('qurban_packages').select();
+
+      for (final remote in response) {
+        final remoteId = remote['id'] as String;
+        final localRows = await (_db.select(
+          _db.qurbanPackages,
+        )..where((t) => t.remoteId.equals(remoteId))).get();
+        final local = localRows.isEmpty ? null : localRows.first;
+        final remoteUpdatedAt = DateTime.tryParse(
+          remote['updated_at']?.toString() ?? '',
+        );
+
+        if (local == null) {
+          await _db
+              .into(_db.qurbanPackages)
+              .insert(
+                QurbanPackagesCompanion.insert(
+                  remoteId: Value(remoteId),
+                  name: remote['name'] ?? '',
+                  monthlyAmount: (remote['monthly_amount'] as num).toDouble(),
+                  isActive: Value(remote['is_active'] ?? true),
+                  syncStatus: const Value(domain.SyncStatus.synced),
+                  updatedAt: Value(remoteUpdatedAt),
+                ),
+              );
+        } else if (local.syncStatus == domain.SyncStatus.synced) {
+          if (remoteUpdatedAt != null &&
+              (local.updatedAt == null ||
+                  remoteUpdatedAt.isAfter(local.updatedAt!))) {
+            await (_db.update(
+              _db.qurbanPackages,
+            )..where((r) => r.id.equals(local.id))).write(
+              QurbanPackagesCompanion(
+                name: Value(remote['name'] ?? ''),
+                monthlyAmount: Value(
+                  (remote['monthly_amount'] as num).toDouble(),
+                ),
+                isActive: Value(remote['is_active'] ?? true),
+                updatedAt: Value(remoteUpdatedAt),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      final msg = 'Gagal pull paket qurban: $e';
+      debugPrint(msg);
+      errors.add(msg);
+    }
+    return errors;
+  }
+
+  Future<List<String>> _pushQurbanParticipants() async {
+    final errors = <String>[];
+    final pending =
+        await (_db.select(_db.qurbanParticipants)..where(
+              (t) => t.syncStatus.isNotValue(domain.SyncStatus.synced.index),
+            ))
+            .get();
+
+    for (final participant in pending) {
+      try {
+        if (participant.syncStatus == domain.SyncStatus.pendingDelete) {
+          if (participant.remoteId != null) {
+            await _supabase!
+                .from('qurban_participants')
+                .delete()
+                .eq('id', participant.remoteId!);
+          }
+          await (_db.delete(
+            _db.qurbanParticipants,
+          )..where((r) => r.id.equals(participant.id))).go();
+          continue;
+        }
+
+        final remoteId = participant.remoteId ?? const Uuid().v4();
+        if (participant.remoteId == null) {
+          await (_db.update(_db.qurbanParticipants)
+                ..where((r) => r.id.equals(participant.id)))
+              .write(QurbanParticipantsCompanion(remoteId: Value(remoteId)));
+        }
+
+        final data = {
+          'id': remoteId,
+          'name': participant.name,
+          'phone': participant.phone,
+          'address': participant.address,
+          'notes': participant.notes,
+          'start_month': participant.startMonth.toIso8601String(),
+          'monthly_amount': participant.monthlyAmount,
+          'total_months': participant.totalMonths,
+        };
+
+        final response =
+            participant.syncStatus == domain.SyncStatus.pendingUpdate
+            ? await _supabase!
+                  .from('qurban_participants')
+                  .update(data)
+                  .eq('id', remoteId)
+                  .select()
+                  .single()
+            : await _supabase!
+                  .from('qurban_participants')
+                  .upsert(data)
+                  .select()
+                  .single();
+
+        await (_db.update(
+          _db.qurbanParticipants,
+        )..where((r) => r.id.equals(participant.id))).write(
+          QurbanParticipantsCompanion(
+            remoteId: Value(response['id']),
+            syncStatus: Value(domain.SyncStatus.synced),
+            updatedAt: Value(DateTime.tryParse(response['updated_at'] ?? '')),
+          ),
+        );
+      } catch (e) {
+        final msg = 'Gagal sync peserta qurban ${participant.name}: $e';
+        debugPrint(msg);
+        errors.add(msg);
+      }
+    }
+    return errors;
+  }
+
+  Future<List<String>> _pullQurbanParticipants() async {
+    final errors = <String>[];
+    try {
+      final response = await _supabase!.from('qurban_participants').select();
+
+      for (final remote in response) {
+        final remoteId = remote['id'] as String;
+        final localRows = await (_db.select(
+          _db.qurbanParticipants,
+        )..where((t) => t.remoteId.equals(remoteId))).get();
+        final local = localRows.isEmpty ? null : localRows.first;
+        final remoteUpdatedAt = DateTime.tryParse(
+          remote['updated_at']?.toString() ?? '',
+        );
+
+        if (local == null) {
+          await _db
+              .into(_db.qurbanParticipants)
+              .insert(
+                QurbanParticipantsCompanion.insert(
+                  remoteId: Value(remoteId),
+                  name: remote['name'] ?? '',
+                  phone: Value(remote['phone']),
+                  address: Value(remote['address']),
+                  notes: Value(remote['notes']),
+                  startMonth: DateTime.parse(remote['start_month']),
+                  monthlyAmount: (remote['monthly_amount'] as num).toDouble(),
+                  totalMonths: Value(remote['total_months'] ?? 10),
+                  syncStatus: const Value(domain.SyncStatus.synced),
+                  updatedAt: Value(remoteUpdatedAt),
+                ),
+              );
+        } else if (local.syncStatus == domain.SyncStatus.synced) {
+          if (remoteUpdatedAt != null &&
+              (local.updatedAt == null ||
+                  remoteUpdatedAt.isAfter(local.updatedAt!))) {
+            await (_db.update(
+              _db.qurbanParticipants,
+            )..where((r) => r.id.equals(local.id))).write(
+              QurbanParticipantsCompanion(
+                name: Value(remote['name'] ?? ''),
+                phone: Value(remote['phone']),
+                address: Value(remote['address']),
+                notes: Value(remote['notes']),
+                startMonth: Value(DateTime.parse(remote['start_month'])),
+                monthlyAmount: Value(
+                  (remote['monthly_amount'] as num).toDouble(),
+                ),
+                totalMonths: Value(remote['total_months'] ?? 10),
+                updatedAt: Value(remoteUpdatedAt),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      final msg = 'Gagal pull peserta qurban: $e';
+      debugPrint(msg);
+      errors.add(msg);
+    }
+    return errors;
+  }
+
+  Future<List<String>> _pushQurbanPayments() async {
+    final errors = <String>[];
+    final pending =
+        await (_db.select(_db.qurbanPayments)..where(
+              (t) => t.syncStatus.isNotValue(domain.SyncStatus.synced.index),
+            ))
+            .get();
+
+    for (final payment in pending) {
+      try {
+        if (payment.syncStatus == domain.SyncStatus.pendingDelete) {
+          if (payment.remoteId != null) {
+            await _supabase!
+                .from('qurban_payments')
+                .delete()
+                .eq('id', payment.remoteId!);
+          }
+          await (_db.delete(
+            _db.qurbanPayments,
+          )..where((r) => r.id.equals(payment.id))).go();
+          continue;
+        }
+
+        final participant = await (_db.select(
+          _db.qurbanParticipants,
+        )..where((t) => t.id.equals(payment.participantId))).getSingleOrNull();
+        if (participant?.remoteId == null) {
+          throw Exception('Peserta belum tersinkron');
+        }
+
+        TransactionEntity? transaction;
+        if (payment.transactionId != null) {
+          transaction =
+              await (_db.select(_db.transactions)
+                    ..where((t) => t.id.equals(payment.transactionId!)))
+                  .getSingleOrNull();
+        }
+        if (transaction?.remoteId == null) {
+          throw Exception('Transaksi kas qurban belum tersinkron');
+        }
+
+        final remoteId = payment.remoteId ?? const Uuid().v4();
+        if (payment.remoteId == null) {
+          await (_db.update(_db.qurbanPayments)
+                ..where((r) => r.id.equals(payment.id)))
+              .write(QurbanPaymentsCompanion(remoteId: Value(remoteId)));
+        }
+
+        final data = {
+          'id': remoteId,
+          'participant_id': participant!.remoteId,
+          'transaction_id': transaction!.remoteId,
+          'amount': payment.amount,
+          'payment_date': payment.paymentDate.toIso8601String(),
+          'note': payment.note,
+        };
+
+        final response = payment.syncStatus == domain.SyncStatus.pendingUpdate
+            ? await _supabase!
+                  .from('qurban_payments')
+                  .update(data)
+                  .eq('id', remoteId)
+                  .select()
+                  .single()
+            : await _supabase!
+                  .from('qurban_payments')
+                  .upsert(data)
+                  .select()
+                  .single();
+
+        await (_db.update(
+          _db.qurbanPayments,
+        )..where((r) => r.id.equals(payment.id))).write(
+          QurbanPaymentsCompanion(
+            remoteId: Value(response['id']),
+            syncStatus: Value(domain.SyncStatus.synced),
+            updatedAt: Value(DateTime.tryParse(response['updated_at'] ?? '')),
+          ),
+        );
+      } catch (e) {
+        final msg = 'Gagal sync pembayaran qurban ${payment.id}: $e';
+        debugPrint(msg);
+        errors.add(msg);
+      }
+    }
+    return errors;
+  }
+
+  Future<List<String>> _pullQurbanPayments() async {
+    final errors = <String>[];
+    try {
+      final response = await _supabase!.from('qurban_payments').select();
+
+      for (final remote in response) {
+        final remoteId = remote['id'] as String;
+        final participantRemoteId = remote['participant_id']?.toString();
+        if (participantRemoteId == null) continue;
+
+        final participantRows = await (_db.select(
+          _db.qurbanParticipants,
+        )..where((t) => t.remoteId.equals(participantRemoteId))).get();
+        if (participantRows.isEmpty) continue;
+        final participant = participantRows.first;
+
+        final transactionRemoteId = remote['transaction_id']?.toString();
+        int? localTransactionId;
+        if (transactionRemoteId != null) {
+          final transactionRows = await (_db.select(
+            _db.transactions,
+          )..where((t) => t.remoteId.equals(transactionRemoteId))).get();
+          if (transactionRows.isNotEmpty) {
+            localTransactionId = transactionRows.first.id;
+          }
+        }
+
+        final localRows = await (_db.select(
+          _db.qurbanPayments,
+        )..where((t) => t.remoteId.equals(remoteId))).get();
+        final local = localRows.isEmpty ? null : localRows.first;
+        final remoteUpdatedAt = DateTime.tryParse(
+          remote['updated_at']?.toString() ?? '',
+        );
+
+        if (local == null) {
+          await _db
+              .into(_db.qurbanPayments)
+              .insert(
+                QurbanPaymentsCompanion.insert(
+                  remoteId: Value(remoteId),
+                  participantId: participant.id,
+                  transactionId: Value(localTransactionId),
+                  amount: (remote['amount'] as num).toDouble(),
+                  paymentDate: DateTime.parse(remote['payment_date']),
+                  note: Value(remote['note']),
+                  syncStatus: const Value(domain.SyncStatus.synced),
+                  updatedAt: Value(remoteUpdatedAt),
+                ),
+              );
+        } else if (local.syncStatus == domain.SyncStatus.synced) {
+          if (remoteUpdatedAt != null &&
+              (local.updatedAt == null ||
+                  remoteUpdatedAt.isAfter(local.updatedAt!))) {
+            await (_db.update(
+              _db.qurbanPayments,
+            )..where((r) => r.id.equals(local.id))).write(
+              QurbanPaymentsCompanion(
+                participantId: Value(participant.id),
+                transactionId: Value(localTransactionId),
+                amount: Value((remote['amount'] as num).toDouble()),
+                paymentDate: Value(DateTime.parse(remote['payment_date'])),
+                note: Value(remote['note']),
+                updatedAt: Value(remoteUpdatedAt),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      final msg = 'Gagal pull pembayaran qurban: $e';
       debugPrint(msg);
       errors.add(msg);
     }
@@ -747,7 +1187,7 @@ class SyncService {
   Future<List<String>> _pushUsers() async {
     final errors = <String>[];
     try {
-      final client = _adminSupabase ?? _supabase;
+      final client = _supabase;
       if (client == null) {
         errors.add('Supabase client not initialized for user sync');
         return errors;
@@ -761,78 +1201,44 @@ class SyncService {
               ))
               .get();
 
-      final authLocalDatasource = GetIt.I<AuthLocalDatasource>();
+      final authLocalDatasource = GetIt.I.isRegistered<AuthLocalDatasource>()
+          ? GetIt.I<AuthLocalDatasource>()
+          : null;
 
       for (final user in pendingCreate) {
         try {
-          if (_adminSupabase != null) {
-            final password = await authLocalDatasource.getPendingUserPassword(
-              user.remoteId!,
-            );
-
-            if (password == null) {
-              throw Exception('Password not found for pending user');
-            }
-
-            try {
-              final response = await _adminSupabase.auth.admin.createUser(
-                AdminUserAttributes(
-                  email: user.email,
-                  password: password,
-                  emailConfirm: true,
-                  userMetadata: {
-                    'full_name': user.fullName,
-                    'username': user.username,
-                    'role': user.role,
-                  },
-                ),
-              );
-
-              if (response.user != null) {
-                final newRemoteId = response.user!.id;
-                await _updateUserSynced(
-                  user.id,
-                  newRemoteId,
-                  response.user?.updatedAt,
-                );
-                await authLocalDatasource.deletePendingUserPassword(
-                  user.remoteId!,
-                );
-              }
-            } catch (e) {
-              final errorStr = e.toString().toLowerCase();
-              if (errorStr.contains('already registered') ||
-                  errorStr.contains('exists')) {
-                // Conflict: User already exists in Supabase Auth.
-                // Try to find the user in 'profiles' table to get their ID
-                debugPrint(
-                  'User ${user.email} already exists. Attempting to link...',
-                );
-                final existing = await _supabase!
-                    .from('profiles')
-                    .select('id')
-                    .eq('email', user.email)
-                    .maybeSingle();
-
-                if (existing != null) {
-                  final existingId = existing['id'] as String;
-                  await _updateUserSynced(user.id, existingId, null);
-                  await authLocalDatasource.deletePendingUserPassword(
-                    user.remoteId!,
-                  );
-                } else {
-                  // If not in profiles, we might need manual intervention or just skip
-                  throw Exception(
-                    'User exists in Auth but not in Profiles. Sync blocked.',
-                  );
-                }
-              } else {
-                rethrow;
-              }
-            }
-          } else {
-            throw Exception('Service Role Key required for creating users');
+          final tempUserId = user.remoteId;
+          if (authLocalDatasource == null || tempUserId == null) {
+            throw Exception('Pending user credential store is unavailable');
           }
+
+          final password = await authLocalDatasource.getPendingUserPassword(
+            tempUserId,
+          );
+
+          if (password == null) {
+            throw Exception('Password not found for pending user');
+          }
+
+          final result = await _adminUserService.createUser(
+            email: user.email,
+            password: password,
+            fullName: user.fullName ?? '',
+            username: user.username,
+            role: user.role,
+          );
+
+          if (result.isBackendUnavailable) {
+            debugPrint(_adminUserDeferredMessage('create', user.fullName));
+            continue;
+          }
+
+          if (!result.isSuccess || result.userId == null) {
+            throw Exception(result.message ?? 'Admin user create failed');
+          }
+
+          await _updateUserSynced(user.id, result.userId!, result.updatedAt);
+          await authLocalDatasource.deletePendingUserPassword(tempUserId);
         } catch (e) {
           final msg = 'Gagal create user ${user.fullName}: $e';
           debugPrint(msg);
@@ -852,42 +1258,29 @@ class SyncService {
         if (user.remoteId == null) continue;
 
         try {
-          // 1. Update Auth User (Email, Password if handled separately, Metadata)
-          // Requires Service Role Key for Admin operations on other users
-          if (_adminSupabase != null) {
-            final attributes = AdminUserAttributes(
-              email: user.email,
-              userMetadata: {
-                'full_name': user.fullName,
-                'username': user.username,
-                'role': user.role,
-              },
-            );
-            await _adminSupabase.auth.admin.updateUserById(
-              user.remoteId!,
-              attributes: attributes,
-            );
+          final result = await _adminUserService.updateUser(
+            userId: user.remoteId!,
+            email: user.email,
+            fullName: user.fullName ?? '',
+            username: user.username,
+            role: user.role,
+          );
+
+          if (result.isBackendUnavailable) {
+            debugPrint(_adminUserDeferredMessage('update', user.fullName));
+            continue;
           }
 
-          // 2. Update public profile
-          final response = await client
-              .from('profiles')
-              .update({
-                'full_name': user.fullName,
-                'username': user.username,
-                'role': user.role,
-                'email': user.email,
-              })
-              .eq('id', user.remoteId!)
-              .select()
-              .single();
+          if (!result.isSuccess) {
+            throw Exception(result.message ?? 'Admin user update failed');
+          }
 
           await (_db.update(
             _db.users,
           )..where((r) => r.id.equals(user.id))).write(
             UsersCompanion(
               syncStatus: Value(domain.SyncStatus.synced),
-              updatedAt: Value(DateTime.tryParse(response['updated_at'] ?? '')),
+              updatedAt: Value(DateTime.tryParse(result.updatedAt ?? '')),
             ),
           );
         } catch (e) {
@@ -915,36 +1308,14 @@ class SyncService {
         }
 
         try {
-          // Delete from Auth (requires Service Role Key)
-          if (_adminSupabase != null) {
-            try {
-              // 1. Try to delete profile explicitly first.
-              // This can resolve DB constraint errors where CASCADE might fail.
-              await _adminSupabase
-                  .from('profiles')
-                  .delete()
-                  .eq('id', user.remoteId!);
+          final result = await _adminUserService.deleteUser(user.remoteId!);
+          if (result.isBackendUnavailable) {
+            debugPrint(_adminUserDeferredMessage('delete', user.fullName));
+            continue;
+          }
 
-              // 2. Delete from Auth
-              await _adminSupabase.auth.admin.deleteUser(user.remoteId!);
-              debugPrint(
-                'Successfully deleted user ${user.fullName} from remote.',
-              );
-            } catch (e) {
-              final errorStr = e.toString();
-              // If user or profile already gone (404), we consider it a success for sync purposes
-              if (errorStr.contains('404') || errorStr.contains('not found')) {
-                debugPrint(
-                  'User ${user.remoteId} already gone from remote. Proceeding with local delete.',
-                );
-              } else {
-                // For other errors (like 500), we rethrow to outer catch block
-                // and keep the user in pendingDelete state for retry.
-                rethrow;
-              }
-            }
-          } else {
-            throw Exception('Service Role Key required for deleting users');
+          if (!result.isSuccess) {
+            throw Exception(result.message ?? 'Admin user delete failed');
           }
 
           // Delete from local DB - only reaches here if no exception or 404
@@ -961,6 +1332,13 @@ class SyncService {
       errors.add('Error preparing user sync: $e');
     }
     return errors;
+  }
+
+  String _adminUserDeferredMessage(String action, String? name) {
+    final userName = (name == null || name.trim().isEmpty)
+        ? 'pengguna'
+        : name.trim();
+    return 'Sync user $action untuk $userName ditunda: Edge Function admin-users belum tersedia';
   }
 
   Future<List<String>> _pullUsers() async {

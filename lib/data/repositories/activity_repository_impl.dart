@@ -80,9 +80,9 @@ class ActivityRepositoryImpl implements ActivityRepository {
     if (existing == null) return;
 
     final newSyncStatus =
-        existing.remoteId == null
-            ? domain_status.SyncStatus.pendingCreate
-            : domain_status.SyncStatus.pendingUpdate;
+        existing.syncStatus == domain_status.SyncStatus.pendingCreate
+        ? domain_status.SyncStatus.pendingCreate
+        : domain_status.SyncStatus.pendingUpdate;
 
     await (_db.update(
       _db.activities,
@@ -123,6 +123,13 @@ class ActivityRepositoryImpl implements ActivityRepository {
     } else {
       await (_db.delete(_db.activities)..where((t) => t.id.equals(id))).go();
     }
+
+    await _auditLogRepository.logActivity(
+      action: 'DELETE',
+      targetTable: 'activities',
+      recordId: id.toString(),
+      description: 'Deleted Activity: ${activity.title}',
+    );
   }
 
   domain.Activity _mapToDomain(ActivityEntity row) {

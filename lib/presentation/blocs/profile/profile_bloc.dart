@@ -28,7 +28,9 @@ abstract class ProfileState extends Equatable {
 }
 
 class ProfileInitial extends ProfileState {}
+
 class ProfileLoading extends ProfileState {}
+
 class ProfileLoaded extends ProfileState {
   final MosqueProfile profile;
   final bool isSaving;
@@ -43,6 +45,7 @@ class ProfileOperationFailure extends ProfileLoaded {
   @override
   List<Object?> get props => [profile, isSaving, operationMessage];
 }
+
 class ProfileError extends ProfileState {
   final String message;
   const ProfileError(this.message);
@@ -60,7 +63,10 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     on<SaveProfile>(_onSaveProfile);
   }
 
-  Future<void> _onLoadProfile(LoadProfile event, Emitter<ProfileState> emit) async {
+  Future<void> _onLoadProfile(
+    LoadProfile event,
+    Emitter<ProfileState> emit,
+  ) async {
     emit(ProfileLoading());
     try {
       final profile = await _repository.getProfile();
@@ -68,26 +74,38 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
         emit(ProfileLoaded(profile));
       } else {
         // Return default empty profile if not found
-        emit(const ProfileLoaded(MosqueProfile(name: 'Nama Masjid', address: 'Alamat Masjid')));
+        emit(
+          const ProfileLoaded(
+            MosqueProfile(name: 'Nama Masjid', address: 'Alamat Masjid'),
+          ),
+        );
       }
     } catch (e) {
       emit(ProfileError(e.toString()));
     }
   }
 
-  Future<void> _onSaveProfile(SaveProfile event, Emitter<ProfileState> emit) async {
+  Future<void> _onSaveProfile(
+    SaveProfile event,
+    Emitter<ProfileState> emit,
+  ) async {
     if (state is ProfileLoaded) {
       emit(ProfileLoaded(event.profile, isSaving: true));
     } else {
       emit(ProfileLoading());
     }
-    
+
     try {
       await _repository.saveProfile(event.profile);
       emit(ProfileLoaded(event.profile, isSaving: false));
     } catch (e) {
       if (state is ProfileLoaded) {
-        emit(ProfileOperationFailure((state as ProfileLoaded).profile, e.toString()));
+        emit(
+          ProfileOperationFailure(
+            (state as ProfileLoaded).profile,
+            e.toString(),
+          ),
+        );
       } else {
         emit(ProfileError(e.toString()));
       }

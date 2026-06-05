@@ -67,6 +67,13 @@ class ActivityOperationFailure extends ActivityLoaded {
   List<Object?> get props => [activities, operationMessage];
 }
 
+class ActivityOperationSuccess extends ActivityLoaded {
+  final String operationMessage;
+  const ActivityOperationSuccess(super.activities, this.operationMessage);
+  @override
+  List<Object?> get props => [activities, operationMessage];
+}
+
 class ActivityError extends ActivityState {
   final String message;
   const ActivityError(this.message);
@@ -105,6 +112,14 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   ) async {
     try {
       await _repository.addActivity(event.activity);
+      if (state is ActivityLoaded) {
+        emit(
+          ActivityOperationSuccess(
+            (state as ActivityLoaded).activities,
+            'Kegiatan berhasil ditambahkan',
+          ),
+        );
+      }
     } catch (e) {
       if (state is ActivityLoaded) {
         emit(
@@ -125,6 +140,14 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   ) async {
     try {
       await _repository.updateActivity(event.activity);
+      if (state is ActivityLoaded) {
+        emit(
+          ActivityOperationSuccess(
+            (state as ActivityLoaded).activities,
+            'Kegiatan berhasil diupdate',
+          ),
+        );
+      }
     } catch (e) {
       if (state is ActivityLoaded) {
         emit(
@@ -145,6 +168,14 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   ) async {
     try {
       await _repository.deleteActivity(event.id);
+      if (state is ActivityLoaded) {
+        emit(
+          ActivityOperationSuccess(
+            (state as ActivityLoaded).activities,
+            'Kegiatan berhasil dihapus',
+          ),
+        );
+      }
     } catch (e) {
       if (state is ActivityLoaded) {
         emit(

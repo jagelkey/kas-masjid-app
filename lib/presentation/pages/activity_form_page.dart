@@ -22,6 +22,7 @@ class _ActivityFormPageState extends State<ActivityFormPage> {
   late DateTime _selectedDate;
   late TimeOfDay _selectedTime;
   late String _selectedType;
+  bool _isSubmitting = false;
 
   final List<String> _types = [
     'Pengajian',
@@ -64,111 +65,142 @@ class _ActivityFormPageState extends State<ActivityFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.activity == null ? 'Tambah Kegiatan' : 'Edit Kegiatan',
+    return BlocListener<ActivityBloc, ActivityState>(
+      listener: (context, state) {
+        if (state is ActivityOperationSuccess) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(state.operationMessage)));
+          if (mounted) context.pop();
+        } else if (state is ActivityOperationFailure) {
+          setState(() => _isSubmitting = false);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(state.operationMessage)));
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            widget.activity == null ? 'Tambah Kegiatan' : 'Edit Kegiatan',
+          ),
         ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(labelText: 'Nama Kegiatan'),
-                validator: (v) => v!.isEmpty ? 'Wajib diisi' : null,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                key: ValueKey(_selectedType),
-                isExpanded: true,
-                initialValue: _selectedType,
-                decoration: const InputDecoration(labelText: 'Jenis Kegiatan'),
-                items: _types
-                    .map(
-                      (e) => DropdownMenuItem<String>(value: e, child: Text(e)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setState(() => _selectedType = value);
-                },
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: _selectedDate,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2030),
-                        );
-                        if (date != null) setState(() => _selectedDate = date);
-                      },
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Tanggal',
-                          suffixIcon: Icon(Icons.calendar_today),
-                        ),
-                        child: Text(
-                          DateFormat('dd MMM yyyy').format(_selectedDate),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(labelText: 'Nama Kegiatan'),
+                  validator: (v) => v!.isEmpty ? 'Wajib diisi' : null,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  key: ValueKey(_selectedType),
+                  isExpanded: true,
+                  initialValue: _selectedType,
+                  decoration: const InputDecoration(
+                    labelText: 'Jenis Kegiatan',
+                  ),
+                  items: _types
+                      .map(
+                        (e) =>
+                            DropdownMenuItem<String>(value: e, child: Text(e)),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _selectedType = value);
+                  },
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030),
+                          );
+                          if (date != null) {
+                            setState(() => _selectedDate = date);
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Tanggal',
+                            suffixIcon: Icon(Icons.calendar_today),
+                          ),
+                          child: Text(
+                            DateFormat('dd MMM yyyy').format(_selectedDate),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () async {
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: _selectedTime,
-                        );
-                        if (time != null) setState(() => _selectedTime = time);
-                      },
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Jam',
-                          suffixIcon: Icon(Icons.access_time),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final time = await showTimePicker(
+                            context: context,
+                            initialTime: _selectedTime,
+                          );
+                          if (time != null) {
+                            setState(() => _selectedTime = time);
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Jam',
+                            suffixIcon: Icon(Icons.access_time),
+                          ),
+                          child: Text(_selectedTime.format(context)),
                         ),
-                        child: Text(_selectedTime.format(context)),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _picController,
-                decoration: const InputDecoration(
-                  labelText: 'Penanggung Jawab',
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(labelText: 'Deskripsi'),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: FilledButton(
-                  onPressed: _submit,
-                  child: Text(
-                    widget.activity == null
-                        ? 'Simpan Kegiatan'
-                        : 'Update Kegiatan',
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _picController,
+                  decoration: const InputDecoration(
+                    labelText: 'Penanggung Jawab',
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(labelText: 'Deskripsi'),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: FilledButton(
+                    onPressed: _isSubmitting ? null : _submit,
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            widget.activity == null
+                                ? 'Simpan Kegiatan'
+                                : 'Update Kegiatan',
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -177,6 +209,7 @@ class _ActivityFormPageState extends State<ActivityFormPage> {
 
   void _submit() {
     if (_formKey.currentState!.validate()) {
+      setState(() => _isSubmitting = true);
       final dateTime = DateTime(
         _selectedDate.year,
         _selectedDate.month,
@@ -188,7 +221,9 @@ class _ActivityFormPageState extends State<ActivityFormPage> {
       final activity = Activity(
         id: widget.activity?.id,
         remoteId: widget.activity?.remoteId,
-        syncStatus: widget.activity?.syncStatus ?? domain_status.SyncStatus.pendingCreate,
+        syncStatus:
+            widget.activity?.syncStatus ??
+            domain_status.SyncStatus.pendingCreate,
         title: _titleController.text,
         type: _selectedType,
         date: dateTime,
@@ -201,7 +236,6 @@ class _ActivityFormPageState extends State<ActivityFormPage> {
       } else {
         context.read<ActivityBloc>().add(UpdateActivityEvent(activity));
       }
-      context.pop();
     }
   }
 }

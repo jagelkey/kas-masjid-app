@@ -2,7 +2,6 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
-import 'package:masjid_app/core/constants/env.dart';
 import 'package:masjid_app/core/router/app_router.dart';
 import 'package:masjid_app/data/datasources/local/app_database.dart';
 import 'package:masjid_app/data/datasources/local/auth_local_datasource.dart';
@@ -21,6 +20,8 @@ enum UserRole {
   bool get canManageTransactions => this == admin || this == bendahara;
   bool get canManageActivities => this == admin || this == sekretaris;
   bool get canManageSettings => this == admin || this == ketua;
+  bool get canManageQurban =>
+      this == admin || this == ketua || this == bendahara;
 }
 
 // Events
@@ -43,14 +44,18 @@ class RegisterRequested extends AuthEvent {
   final String email;
   final String username;
   final String password;
+  final UserRole role;
+
   const RegisterRequested({
     required this.name,
     required this.email,
     required this.username,
     required this.password,
+    this.role = UserRole.viewer,
   });
+
   @override
-  List<Object?> get props => [name, email, username, password];
+  List<Object?> get props => [name, email, username, password, role];
 }
 
 class LogoutRequested extends AuthEvent {}
@@ -127,10 +132,9 @@ class AuthSuccess extends AuthState {
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   SupabaseClient? _supabase;
   final AuthLocalDatasource _localDatasource;
-  final AppDatabase _appDatabase;
   final UserRepository _userRepository;
 
-  AuthBloc(this._localDatasource, this._appDatabase, this._userRepository)
+  AuthBloc(this._localDatasource, AppDatabase _, this._userRepository)
     : super(AuthInitial()) {
     on<CheckAuthStatus>(_onCheckAuthStatus);
     on<LoginRequested>(_onLoginRequested);
@@ -144,8 +148,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     } catch (_) {
       _supabase = null;
     }
-
-    add(CheckAuthStatus());
   }
 
   Future<void> _onUpdateProfileRequested(
@@ -397,17 +399,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             password: event.password,
             data: {
               'full_name': event.name,
-              'role': 'viewer', // FIX: Default role should be viewer, not admin
+              'role': event.role.toString().split('.').last,
               'username': normalizedUsername,
             },
           );
           user = response.user;
 
-          // Ensure role is set to viewer in public.profiles
+          // Ensure role is set in public.profiles
           if (user != null) {
             await _supabase!
                 .from('profiles')
-                .update({'role': 'viewer'})
+                .update({'role': event.role.toString().split('.').last})
                 .eq('id', user.id);
           }
         } catch (e) {
@@ -419,7 +421,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       // 2. Local Registration (Only if Supabase is null or successful)
       final userId = user?.id ?? const Uuid().v4();
-      final role = UserRole.viewer; // FIX: Default role should be viewer
+      final role = event.role;
 
       await _localDatasource.saveCredentials(
         email: normalizedEmail,
@@ -430,10 +432,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         username: normalizedUsername,
       );
 
+      if (user == null) {
+        await _localDatasource.savePendingUserPassword(userId, event.password);
+      }
+
       // Save to Users Table (Local DB)
       await _userRepository.addUser(
         domain.UserEntity(
-          remoteId: user?.id, // Can be null for purely offline users
+          remoteId: user?.id ?? userId,
           email: normalizedEmail,
           username: normalizedUsername,
           fullName: event.name,
@@ -444,8 +450,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       // 3. Emit Authenticated
       if (user != null) {
+        await _localDatasource.saveOnlinePassword(
+          email: normalizedEmail,
+          password: event.password,
+        );
+        globalAuthNotifier.setOffline(false);
         emit(Authenticated(user, role: role));
       } else {
+        globalAuthNotifier.setOffline(true);
         emit(
           AuthOffline(
             LocalUser(
@@ -475,6 +487,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final session = _supabase!.auth.currentSession;
         if (session != null) {
           final role = _parseRole(session.user.userMetadata);
+          globalAuthNotifier.setOffline(false);
           emit(Authenticated(session.user, role: role));
           return;
         }
@@ -483,9 +496,20 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       // 2. Try Restore Offline Session
       final lastUser = await _localDatasource.getLastLoggedInUser();
       if (lastUser != null) {
+        final restoredSession = await _tryRestoreOnlineSession(lastUser);
+        if (restoredSession != null) {
+          await _handleSuccessfulLogin(
+            restoredSession.user,
+            restoredSession.password,
+            emit,
+          );
+          return;
+        }
+
         globalAuthNotifier.setOffline(true);
         emit(AuthOffline(lastUser));
       } else {
+        globalAuthNotifier.setOffline(false);
         emit(Unauthenticated());
       }
     } catch (_) {
@@ -493,14 +517,48 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       try {
         final lastUser = await _localDatasource.getLastLoggedInUser();
         if (lastUser != null) {
+          final restoredSession = await _tryRestoreOnlineSession(lastUser);
+          if (restoredSession != null) {
+            await _handleSuccessfulLogin(
+              restoredSession.user,
+              restoredSession.password,
+              emit,
+            );
+            return;
+          }
+
           globalAuthNotifier.setOffline(true);
           emit(AuthOffline(lastUser));
         } else {
+          globalAuthNotifier.setOffline(false);
           emit(Unauthenticated());
         }
       } catch (e) {
+        globalAuthNotifier.setOffline(false);
         emit(Unauthenticated());
       }
+    }
+  }
+
+  Future<({User user, String password})?> _tryRestoreOnlineSession(
+    LocalUser lastUser,
+  ) async {
+    if (_supabase == null) return null;
+
+    final password = await _localDatasource.getOnlinePassword(lastUser.email);
+    if (password == null || password.isEmpty) return null;
+
+    try {
+      final response = await _supabase!.auth.signInWithPassword(
+        email: lastUser.email,
+        password: password,
+      );
+      final user = response.user;
+      if (user == null) return null;
+      return (user: user, password: password);
+    } catch (e) {
+      debugPrint('Online session restore failed: $e');
+      return null;
     }
   }
 
@@ -543,28 +601,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             user?.email ??
             await _localDatasource.getEmailByUsername(identifier);
 
-        // Jika tidak ketemu di lokal, cari di Supabase (Online)
-        if (resolvedEmail == null &&
-            _supabase != null &&
-            Env.supabaseServiceRoleKey.isNotEmpty) {
-          try {
-            final adminClient = SupabaseClient(
-              Env.supabaseUrl,
-              Env.supabaseServiceRoleKey,
-            );
-            final response = await adminClient
-                .from('profiles')
-                .select('email')
-                .eq('username', identifier)
-                .maybeSingle();
-
-            if (response != null && response['email'] != null) {
-              resolvedEmail = response['email'] as String;
-            }
-          } catch (e) {
-            debugPrint('Gagal resolve username online: $e');
-          }
-        }
+        // Jika tidak ketemu di lokal, login menggunakan username tidak didukung online tanpa RPC khusus
+        // Supabase secara default membutuhkan email.
       }
 
       // Try Online Login
@@ -688,6 +726,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       metadata: user.userMetadata ?? {},
       username: username,
     );
+    await _localDatasource.saveOnlinePassword(
+      email: user.email!,
+      password: password,
+    );
 
     // Sync User to Local DB
     final existingUser = await _userRepository.getUserByRemoteId(user.id);
@@ -727,6 +769,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
     }
 
+    globalAuthNotifier.setOffline(false);
     emit(Authenticated(user, role: role));
   }
 
@@ -757,7 +800,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         await _supabase!.auth.signOut();
       }
       await _localDatasource.clearCredentials();
-      await _appDatabase.clearAllData();
+      // Jangan panggil await _appDatabase.clearAllData(); karena akan menghapus semua data transaksi dan aktivitas
     } catch (_) {}
     emit(Unauthenticated());
   }

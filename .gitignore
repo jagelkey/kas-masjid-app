@@ -54,6 +54,7 @@ yarn-error.log*
 # Build outputs
 dist/
 build/
+release/
 *.log
 
 # Environment files
@@ -78,10 +79,8 @@ Thumbs.db
 
 # Sensitive files (auto-detected)
 .env
-.env.example
 build
 build_and_install.bat
 build_and_install.sh
 flutter_01.log
 Masjid-app.apk (large file: 65MB)
-

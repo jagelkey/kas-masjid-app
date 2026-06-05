@@ -1,5 +1,12 @@
+val localFlutterEngineRepoPath = providers.gradleProperty("localFlutterEngineRepo").orNull
+
 allprojects {
     repositories {
+        if (!localFlutterEngineRepoPath.isNullOrBlank()) {
+            maven {
+                url = uri(localFlutterEngineRepoPath)
+            }
+        }
         google()
         mavenCentral()
     }

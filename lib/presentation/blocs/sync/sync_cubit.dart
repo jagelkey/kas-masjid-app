@@ -9,24 +9,22 @@ class SyncState extends Equatable {
   final bool isSyncing;
   final bool isSuccess;
   final List<String> errorMessages;
-  
+
   const SyncState({
-    this.isSyncing = false, 
-    this.isSuccess = true, 
-    this.errorMessages = const []
+    this.isSyncing = false,
+    this.isSuccess = true,
+    this.errorMessages = const [],
   });
-  
+
   @override
   List<Object?> get props => [isSyncing, isSuccess, errorMessages];
-  
+
   factory SyncState.initial() => const SyncState();
   factory SyncState.loading() => const SyncState(isSyncing: true);
-  factory SyncState.success() => const SyncState(isSuccess: true, isSyncing: false);
-  factory SyncState.failure(List<String> messages) => SyncState(
-    isSuccess: false, 
-    isSyncing: false, 
-    errorMessages: messages
-  );
+  factory SyncState.success() =>
+      const SyncState(isSuccess: true, isSyncing: false);
+  factory SyncState.failure(List<String> messages) =>
+      SyncState(isSuccess: false, isSyncing: false, errorMessages: messages);
 }
 
 @injectable

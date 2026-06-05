@@ -108,6 +108,27 @@ class $TransactionsTable extends Transactions
         requiredDuringInsert: false,
         defaultValue: const Constant('[]'),
       ).withConverter<List<String>>($TransactionsTable.$converterproofUrls);
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manual'),
+  );
+  static const VerificationMeta _sourceRefMeta = const VerificationMeta(
+    'sourceRef',
+  );
+  @override
+  late final GeneratedColumn<String> sourceRef = GeneratedColumn<String>(
+    'source_ref',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   late final GeneratedColumnWithTypeConverter<domain_status.SyncStatus, int>
   syncStatus =
@@ -155,6 +176,8 @@ class $TransactionsTable extends Transactions
     date,
     proofPaths,
     proofUrls,
+    source,
+    sourceRef,
     syncStatus,
     createdAt,
     updatedAt,
@@ -212,6 +235,18 @@ class $TransactionsTable extends Transactions
       );
     } else if (isInserting) {
       context.missing(_dateMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    }
+    if (data.containsKey('source_ref')) {
+      context.handle(
+        _sourceRefMeta,
+        sourceRef.isAcceptableOrUnknown(data['source_ref']!, _sourceRefMeta),
+      );
     }
     if (data.containsKey('created_at')) {
       context.handle(
@@ -276,6 +311,14 @@ class $TransactionsTable extends Transactions
           data['${effectivePrefix}proof_urls'],
         )!,
       ),
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      sourceRef: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_ref'],
+      ),
       syncStatus: $TransactionsTable.$convertersyncStatus.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.int,
@@ -323,6 +366,8 @@ class TransactionEntity extends DataClass
   final DateTime date;
   final List<String> proofPaths;
   final List<String> proofUrls;
+  final String source;
+  final String? sourceRef;
   final domain_status.SyncStatus syncStatus;
   final DateTime createdAt;
   final DateTime? updatedAt;
@@ -336,6 +381,8 @@ class TransactionEntity extends DataClass
     required this.date,
     required this.proofPaths,
     required this.proofUrls,
+    required this.source,
+    this.sourceRef,
     required this.syncStatus,
     required this.createdAt,
     this.updatedAt,
@@ -368,6 +415,10 @@ class TransactionEntity extends DataClass
         $TransactionsTable.$converterproofUrls.toSql(proofUrls),
       );
     }
+    map['source'] = Variable<String>(source);
+    if (!nullToAbsent || sourceRef != null) {
+      map['source_ref'] = Variable<String>(sourceRef);
+    }
     {
       map['sync_status'] = Variable<int>(
         $TransactionsTable.$convertersyncStatus.toSql(syncStatus),
@@ -395,6 +446,10 @@ class TransactionEntity extends DataClass
       date: Value(date),
       proofPaths: Value(proofPaths),
       proofUrls: Value(proofUrls),
+      source: Value(source),
+      sourceRef: sourceRef == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceRef),
       syncStatus: Value(syncStatus),
       createdAt: Value(createdAt),
       updatedAt: updatedAt == null && nullToAbsent
@@ -420,6 +475,8 @@ class TransactionEntity extends DataClass
       date: serializer.fromJson<DateTime>(json['date']),
       proofPaths: serializer.fromJson<List<String>>(json['proofPaths']),
       proofUrls: serializer.fromJson<List<String>>(json['proofUrls']),
+      source: serializer.fromJson<String>(json['source']),
+      sourceRef: serializer.fromJson<String?>(json['sourceRef']),
       syncStatus: $TransactionsTable.$convertersyncStatus.fromJson(
         serializer.fromJson<int>(json['syncStatus']),
       ),
@@ -442,6 +499,8 @@ class TransactionEntity extends DataClass
       'date': serializer.toJson<DateTime>(date),
       'proofPaths': serializer.toJson<List<String>>(proofPaths),
       'proofUrls': serializer.toJson<List<String>>(proofUrls),
+      'source': serializer.toJson<String>(source),
+      'sourceRef': serializer.toJson<String?>(sourceRef),
       'syncStatus': serializer.toJson<int>(
         $TransactionsTable.$convertersyncStatus.toJson(syncStatus),
       ),
@@ -460,6 +519,8 @@ class TransactionEntity extends DataClass
     DateTime? date,
     List<String>? proofPaths,
     List<String>? proofUrls,
+    String? source,
+    Value<String?> sourceRef = const Value.absent(),
     domain_status.SyncStatus? syncStatus,
     DateTime? createdAt,
     Value<DateTime?> updatedAt = const Value.absent(),
@@ -473,6 +534,8 @@ class TransactionEntity extends DataClass
     date: date ?? this.date,
     proofPaths: proofPaths ?? this.proofPaths,
     proofUrls: proofUrls ?? this.proofUrls,
+    source: source ?? this.source,
+    sourceRef: sourceRef.present ? sourceRef.value : this.sourceRef,
     syncStatus: syncStatus ?? this.syncStatus,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
@@ -492,6 +555,8 @@ class TransactionEntity extends DataClass
           ? data.proofPaths.value
           : this.proofPaths,
       proofUrls: data.proofUrls.present ? data.proofUrls.value : this.proofUrls,
+      source: data.source.present ? data.source.value : this.source,
+      sourceRef: data.sourceRef.present ? data.sourceRef.value : this.sourceRef,
       syncStatus: data.syncStatus.present
           ? data.syncStatus.value
           : this.syncStatus,
@@ -512,6 +577,8 @@ class TransactionEntity extends DataClass
           ..write('date: $date, ')
           ..write('proofPaths: $proofPaths, ')
           ..write('proofUrls: $proofUrls, ')
+          ..write('source: $source, ')
+          ..write('sourceRef: $sourceRef, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
@@ -530,6 +597,8 @@ class TransactionEntity extends DataClass
     date,
     proofPaths,
     proofUrls,
+    source,
+    sourceRef,
     syncStatus,
     createdAt,
     updatedAt,
@@ -547,6 +616,8 @@ class TransactionEntity extends DataClass
           other.date == this.date &&
           other.proofPaths == this.proofPaths &&
           other.proofUrls == this.proofUrls &&
+          other.source == this.source &&
+          other.sourceRef == this.sourceRef &&
           other.syncStatus == this.syncStatus &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
@@ -562,6 +633,8 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
   final Value<DateTime> date;
   final Value<List<String>> proofPaths;
   final Value<List<String>> proofUrls;
+  final Value<String> source;
+  final Value<String?> sourceRef;
   final Value<domain_status.SyncStatus> syncStatus;
   final Value<DateTime> createdAt;
   final Value<DateTime?> updatedAt;
@@ -575,6 +648,8 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
     this.date = const Value.absent(),
     this.proofPaths = const Value.absent(),
     this.proofUrls = const Value.absent(),
+    this.source = const Value.absent(),
+    this.sourceRef = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -589,6 +664,8 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
     required DateTime date,
     this.proofPaths = const Value.absent(),
     this.proofUrls = const Value.absent(),
+    this.source = const Value.absent(),
+    this.sourceRef = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -606,6 +683,8 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
     Expression<DateTime>? date,
     Expression<String>? proofPaths,
     Expression<String>? proofUrls,
+    Expression<String>? source,
+    Expression<String>? sourceRef,
     Expression<int>? syncStatus,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -620,6 +699,8 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
       if (date != null) 'date': date,
       if (proofPaths != null) 'proof_paths': proofPaths,
       if (proofUrls != null) 'proof_urls': proofUrls,
+      if (source != null) 'source': source,
+      if (sourceRef != null) 'source_ref': sourceRef,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -636,6 +717,8 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
     Value<DateTime>? date,
     Value<List<String>>? proofPaths,
     Value<List<String>>? proofUrls,
+    Value<String>? source,
+    Value<String?>? sourceRef,
     Value<domain_status.SyncStatus>? syncStatus,
     Value<DateTime>? createdAt,
     Value<DateTime?>? updatedAt,
@@ -650,6 +733,8 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
       date: date ?? this.date,
       proofPaths: proofPaths ?? this.proofPaths,
       proofUrls: proofUrls ?? this.proofUrls,
+      source: source ?? this.source,
+      sourceRef: sourceRef ?? this.sourceRef,
       syncStatus: syncStatus ?? this.syncStatus,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -692,6 +777,12 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
         $TransactionsTable.$converterproofUrls.toSql(proofUrls.value),
       );
     }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (sourceRef.present) {
+      map['source_ref'] = Variable<String>(sourceRef.value);
+    }
     if (syncStatus.present) {
       map['sync_status'] = Variable<int>(
         $TransactionsTable.$convertersyncStatus.toSql(syncStatus.value),
@@ -718,6 +809,8 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntity> {
           ..write('date: $date, ')
           ..write('proofPaths: $proofPaths, ')
           ..write('proofUrls: $proofUrls, ')
+          ..write('source: $source, ')
+          ..write('sourceRef: $sourceRef, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
@@ -2923,6 +3016,1867 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
   }
 }
 
+class $QurbanPackagesTable extends QurbanPackages
+    with TableInfo<$QurbanPackagesTable, QurbanPackageEntity> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $QurbanPackagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _remoteIdMeta = const VerificationMeta(
+    'remoteId',
+  );
+  @override
+  late final GeneratedColumn<String> remoteId = GeneratedColumn<String>(
+    'remote_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _monthlyAmountMeta = const VerificationMeta(
+    'monthlyAmount',
+  );
+  @override
+  late final GeneratedColumn<double> monthlyAmount = GeneratedColumn<double>(
+    'monthly_amount',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isActiveMeta = const VerificationMeta(
+    'isActive',
+  );
+  @override
+  late final GeneratedColumn<bool> isActive = GeneratedColumn<bool>(
+    'is_active',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_active" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<domain_status.SyncStatus, int>
+  syncStatus =
+      GeneratedColumn<int>(
+        'sync_status',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(1),
+      ).withConverter<domain_status.SyncStatus>(
+        $QurbanPackagesTable.$convertersyncStatus,
+      );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    remoteId,
+    name,
+    monthlyAmount,
+    isActive,
+    syncStatus,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'qurban_packages';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<QurbanPackageEntity> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('remote_id')) {
+      context.handle(
+        _remoteIdMeta,
+        remoteId.isAcceptableOrUnknown(data['remote_id']!, _remoteIdMeta),
+      );
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('monthly_amount')) {
+      context.handle(
+        _monthlyAmountMeta,
+        monthlyAmount.isAcceptableOrUnknown(
+          data['monthly_amount']!,
+          _monthlyAmountMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_monthlyAmountMeta);
+    }
+    if (data.containsKey('is_active')) {
+      context.handle(
+        _isActiveMeta,
+        isActive.isAcceptableOrUnknown(data['is_active']!, _isActiveMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  QurbanPackageEntity map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return QurbanPackageEntity(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      remoteId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_id'],
+      ),
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      monthlyAmount: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}monthly_amount'],
+      )!,
+      isActive: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_active'],
+      )!,
+      syncStatus: $QurbanPackagesTable.$convertersyncStatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}sync_status'],
+        )!,
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      ),
+    );
+  }
+
+  @override
+  $QurbanPackagesTable createAlias(String alias) {
+    return $QurbanPackagesTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<domain_status.SyncStatus, int, int>
+  $convertersyncStatus = const EnumIndexConverter<domain_status.SyncStatus>(
+    domain_status.SyncStatus.values,
+  );
+}
+
+class QurbanPackageEntity extends DataClass
+    implements Insertable<QurbanPackageEntity> {
+  final int id;
+  final String? remoteId;
+  final String name;
+  final double monthlyAmount;
+  final bool isActive;
+  final domain_status.SyncStatus syncStatus;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  const QurbanPackageEntity({
+    required this.id,
+    this.remoteId,
+    required this.name,
+    required this.monthlyAmount,
+    required this.isActive,
+    required this.syncStatus,
+    required this.createdAt,
+    this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || remoteId != null) {
+      map['remote_id'] = Variable<String>(remoteId);
+    }
+    map['name'] = Variable<String>(name);
+    map['monthly_amount'] = Variable<double>(monthlyAmount);
+    map['is_active'] = Variable<bool>(isActive);
+    {
+      map['sync_status'] = Variable<int>(
+        $QurbanPackagesTable.$convertersyncStatus.toSql(syncStatus),
+      );
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || updatedAt != null) {
+      map['updated_at'] = Variable<DateTime>(updatedAt);
+    }
+    return map;
+  }
+
+  QurbanPackagesCompanion toCompanion(bool nullToAbsent) {
+    return QurbanPackagesCompanion(
+      id: Value(id),
+      remoteId: remoteId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(remoteId),
+      name: Value(name),
+      monthlyAmount: Value(monthlyAmount),
+      isActive: Value(isActive),
+      syncStatus: Value(syncStatus),
+      createdAt: Value(createdAt),
+      updatedAt: updatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(updatedAt),
+    );
+  }
+
+  factory QurbanPackageEntity.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return QurbanPackageEntity(
+      id: serializer.fromJson<int>(json['id']),
+      remoteId: serializer.fromJson<String?>(json['remoteId']),
+      name: serializer.fromJson<String>(json['name']),
+      monthlyAmount: serializer.fromJson<double>(json['monthlyAmount']),
+      isActive: serializer.fromJson<bool>(json['isActive']),
+      syncStatus: $QurbanPackagesTable.$convertersyncStatus.fromJson(
+        serializer.fromJson<int>(json['syncStatus']),
+      ),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime?>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'remoteId': serializer.toJson<String?>(remoteId),
+      'name': serializer.toJson<String>(name),
+      'monthlyAmount': serializer.toJson<double>(monthlyAmount),
+      'isActive': serializer.toJson<bool>(isActive),
+      'syncStatus': serializer.toJson<int>(
+        $QurbanPackagesTable.$convertersyncStatus.toJson(syncStatus),
+      ),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime?>(updatedAt),
+    };
+  }
+
+  QurbanPackageEntity copyWith({
+    int? id,
+    Value<String?> remoteId = const Value.absent(),
+    String? name,
+    double? monthlyAmount,
+    bool? isActive,
+    domain_status.SyncStatus? syncStatus,
+    DateTime? createdAt,
+    Value<DateTime?> updatedAt = const Value.absent(),
+  }) => QurbanPackageEntity(
+    id: id ?? this.id,
+    remoteId: remoteId.present ? remoteId.value : this.remoteId,
+    name: name ?? this.name,
+    monthlyAmount: monthlyAmount ?? this.monthlyAmount,
+    isActive: isActive ?? this.isActive,
+    syncStatus: syncStatus ?? this.syncStatus,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
+  );
+  QurbanPackageEntity copyWithCompanion(QurbanPackagesCompanion data) {
+    return QurbanPackageEntity(
+      id: data.id.present ? data.id.value : this.id,
+      remoteId: data.remoteId.present ? data.remoteId.value : this.remoteId,
+      name: data.name.present ? data.name.value : this.name,
+      monthlyAmount: data.monthlyAmount.present
+          ? data.monthlyAmount.value
+          : this.monthlyAmount,
+      isActive: data.isActive.present ? data.isActive.value : this.isActive,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('QurbanPackageEntity(')
+          ..write('id: $id, ')
+          ..write('remoteId: $remoteId, ')
+          ..write('name: $name, ')
+          ..write('monthlyAmount: $monthlyAmount, ')
+          ..write('isActive: $isActive, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    remoteId,
+    name,
+    monthlyAmount,
+    isActive,
+    syncStatus,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is QurbanPackageEntity &&
+          other.id == this.id &&
+          other.remoteId == this.remoteId &&
+          other.name == this.name &&
+          other.monthlyAmount == this.monthlyAmount &&
+          other.isActive == this.isActive &&
+          other.syncStatus == this.syncStatus &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class QurbanPackagesCompanion extends UpdateCompanion<QurbanPackageEntity> {
+  final Value<int> id;
+  final Value<String?> remoteId;
+  final Value<String> name;
+  final Value<double> monthlyAmount;
+  final Value<bool> isActive;
+  final Value<domain_status.SyncStatus> syncStatus;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> updatedAt;
+  const QurbanPackagesCompanion({
+    this.id = const Value.absent(),
+    this.remoteId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.monthlyAmount = const Value.absent(),
+    this.isActive = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  QurbanPackagesCompanion.insert({
+    this.id = const Value.absent(),
+    this.remoteId = const Value.absent(),
+    required String name,
+    required double monthlyAmount,
+    this.isActive = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  }) : name = Value(name),
+       monthlyAmount = Value(monthlyAmount);
+  static Insertable<QurbanPackageEntity> custom({
+    Expression<int>? id,
+    Expression<String>? remoteId,
+    Expression<String>? name,
+    Expression<double>? monthlyAmount,
+    Expression<bool>? isActive,
+    Expression<int>? syncStatus,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (remoteId != null) 'remote_id': remoteId,
+      if (name != null) 'name': name,
+      if (monthlyAmount != null) 'monthly_amount': monthlyAmount,
+      if (isActive != null) 'is_active': isActive,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  QurbanPackagesCompanion copyWith({
+    Value<int>? id,
+    Value<String?>? remoteId,
+    Value<String>? name,
+    Value<double>? monthlyAmount,
+    Value<bool>? isActive,
+    Value<domain_status.SyncStatus>? syncStatus,
+    Value<DateTime>? createdAt,
+    Value<DateTime?>? updatedAt,
+  }) {
+    return QurbanPackagesCompanion(
+      id: id ?? this.id,
+      remoteId: remoteId ?? this.remoteId,
+      name: name ?? this.name,
+      monthlyAmount: monthlyAmount ?? this.monthlyAmount,
+      isActive: isActive ?? this.isActive,
+      syncStatus: syncStatus ?? this.syncStatus,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (remoteId.present) {
+      map['remote_id'] = Variable<String>(remoteId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (monthlyAmount.present) {
+      map['monthly_amount'] = Variable<double>(monthlyAmount.value);
+    }
+    if (isActive.present) {
+      map['is_active'] = Variable<bool>(isActive.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(
+        $QurbanPackagesTable.$convertersyncStatus.toSql(syncStatus.value),
+      );
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('QurbanPackagesCompanion(')
+          ..write('id: $id, ')
+          ..write('remoteId: $remoteId, ')
+          ..write('name: $name, ')
+          ..write('monthlyAmount: $monthlyAmount, ')
+          ..write('isActive: $isActive, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $QurbanParticipantsTable extends QurbanParticipants
+    with TableInfo<$QurbanParticipantsTable, QurbanParticipantEntity> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $QurbanParticipantsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _remoteIdMeta = const VerificationMeta(
+    'remoteId',
+  );
+  @override
+  late final GeneratedColumn<String> remoteId = GeneratedColumn<String>(
+    'remote_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _phoneMeta = const VerificationMeta('phone');
+  @override
+  late final GeneratedColumn<String> phone = GeneratedColumn<String>(
+    'phone',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _addressMeta = const VerificationMeta(
+    'address',
+  );
+  @override
+  late final GeneratedColumn<String> address = GeneratedColumn<String>(
+    'address',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+    'notes',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _startMonthMeta = const VerificationMeta(
+    'startMonth',
+  );
+  @override
+  late final GeneratedColumn<DateTime> startMonth = GeneratedColumn<DateTime>(
+    'start_month',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _monthlyAmountMeta = const VerificationMeta(
+    'monthlyAmount',
+  );
+  @override
+  late final GeneratedColumn<double> monthlyAmount = GeneratedColumn<double>(
+    'monthly_amount',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _totalMonthsMeta = const VerificationMeta(
+    'totalMonths',
+  );
+  @override
+  late final GeneratedColumn<int> totalMonths = GeneratedColumn<int>(
+    'total_months',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(10),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<domain_status.SyncStatus, int>
+  syncStatus =
+      GeneratedColumn<int>(
+        'sync_status',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(1),
+      ).withConverter<domain_status.SyncStatus>(
+        $QurbanParticipantsTable.$convertersyncStatus,
+      );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    remoteId,
+    name,
+    phone,
+    address,
+    notes,
+    startMonth,
+    monthlyAmount,
+    totalMonths,
+    syncStatus,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'qurban_participants';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<QurbanParticipantEntity> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('remote_id')) {
+      context.handle(
+        _remoteIdMeta,
+        remoteId.isAcceptableOrUnknown(data['remote_id']!, _remoteIdMeta),
+      );
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('phone')) {
+      context.handle(
+        _phoneMeta,
+        phone.isAcceptableOrUnknown(data['phone']!, _phoneMeta),
+      );
+    }
+    if (data.containsKey('address')) {
+      context.handle(
+        _addressMeta,
+        address.isAcceptableOrUnknown(data['address']!, _addressMeta),
+      );
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+        _notesMeta,
+        notes.isAcceptableOrUnknown(data['notes']!, _notesMeta),
+      );
+    }
+    if (data.containsKey('start_month')) {
+      context.handle(
+        _startMonthMeta,
+        startMonth.isAcceptableOrUnknown(data['start_month']!, _startMonthMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startMonthMeta);
+    }
+    if (data.containsKey('monthly_amount')) {
+      context.handle(
+        _monthlyAmountMeta,
+        monthlyAmount.isAcceptableOrUnknown(
+          data['monthly_amount']!,
+          _monthlyAmountMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_monthlyAmountMeta);
+    }
+    if (data.containsKey('total_months')) {
+      context.handle(
+        _totalMonthsMeta,
+        totalMonths.isAcceptableOrUnknown(
+          data['total_months']!,
+          _totalMonthsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  QurbanParticipantEntity map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return QurbanParticipantEntity(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      remoteId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_id'],
+      ),
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      phone: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}phone'],
+      ),
+      address: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}address'],
+      ),
+      notes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}notes'],
+      ),
+      startMonth: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}start_month'],
+      )!,
+      monthlyAmount: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}monthly_amount'],
+      )!,
+      totalMonths: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}total_months'],
+      )!,
+      syncStatus: $QurbanParticipantsTable.$convertersyncStatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}sync_status'],
+        )!,
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      ),
+    );
+  }
+
+  @override
+  $QurbanParticipantsTable createAlias(String alias) {
+    return $QurbanParticipantsTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<domain_status.SyncStatus, int, int>
+  $convertersyncStatus = const EnumIndexConverter<domain_status.SyncStatus>(
+    domain_status.SyncStatus.values,
+  );
+}
+
+class QurbanParticipantEntity extends DataClass
+    implements Insertable<QurbanParticipantEntity> {
+  final int id;
+  final String? remoteId;
+  final String name;
+  final String? phone;
+  final String? address;
+  final String? notes;
+  final DateTime startMonth;
+  final double monthlyAmount;
+  final int totalMonths;
+  final domain_status.SyncStatus syncStatus;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  const QurbanParticipantEntity({
+    required this.id,
+    this.remoteId,
+    required this.name,
+    this.phone,
+    this.address,
+    this.notes,
+    required this.startMonth,
+    required this.monthlyAmount,
+    required this.totalMonths,
+    required this.syncStatus,
+    required this.createdAt,
+    this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || remoteId != null) {
+      map['remote_id'] = Variable<String>(remoteId);
+    }
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || phone != null) {
+      map['phone'] = Variable<String>(phone);
+    }
+    if (!nullToAbsent || address != null) {
+      map['address'] = Variable<String>(address);
+    }
+    if (!nullToAbsent || notes != null) {
+      map['notes'] = Variable<String>(notes);
+    }
+    map['start_month'] = Variable<DateTime>(startMonth);
+    map['monthly_amount'] = Variable<double>(monthlyAmount);
+    map['total_months'] = Variable<int>(totalMonths);
+    {
+      map['sync_status'] = Variable<int>(
+        $QurbanParticipantsTable.$convertersyncStatus.toSql(syncStatus),
+      );
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || updatedAt != null) {
+      map['updated_at'] = Variable<DateTime>(updatedAt);
+    }
+    return map;
+  }
+
+  QurbanParticipantsCompanion toCompanion(bool nullToAbsent) {
+    return QurbanParticipantsCompanion(
+      id: Value(id),
+      remoteId: remoteId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(remoteId),
+      name: Value(name),
+      phone: phone == null && nullToAbsent
+          ? const Value.absent()
+          : Value(phone),
+      address: address == null && nullToAbsent
+          ? const Value.absent()
+          : Value(address),
+      notes: notes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(notes),
+      startMonth: Value(startMonth),
+      monthlyAmount: Value(monthlyAmount),
+      totalMonths: Value(totalMonths),
+      syncStatus: Value(syncStatus),
+      createdAt: Value(createdAt),
+      updatedAt: updatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(updatedAt),
+    );
+  }
+
+  factory QurbanParticipantEntity.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return QurbanParticipantEntity(
+      id: serializer.fromJson<int>(json['id']),
+      remoteId: serializer.fromJson<String?>(json['remoteId']),
+      name: serializer.fromJson<String>(json['name']),
+      phone: serializer.fromJson<String?>(json['phone']),
+      address: serializer.fromJson<String?>(json['address']),
+      notes: serializer.fromJson<String?>(json['notes']),
+      startMonth: serializer.fromJson<DateTime>(json['startMonth']),
+      monthlyAmount: serializer.fromJson<double>(json['monthlyAmount']),
+      totalMonths: serializer.fromJson<int>(json['totalMonths']),
+      syncStatus: $QurbanParticipantsTable.$convertersyncStatus.fromJson(
+        serializer.fromJson<int>(json['syncStatus']),
+      ),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime?>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'remoteId': serializer.toJson<String?>(remoteId),
+      'name': serializer.toJson<String>(name),
+      'phone': serializer.toJson<String?>(phone),
+      'address': serializer.toJson<String?>(address),
+      'notes': serializer.toJson<String?>(notes),
+      'startMonth': serializer.toJson<DateTime>(startMonth),
+      'monthlyAmount': serializer.toJson<double>(monthlyAmount),
+      'totalMonths': serializer.toJson<int>(totalMonths),
+      'syncStatus': serializer.toJson<int>(
+        $QurbanParticipantsTable.$convertersyncStatus.toJson(syncStatus),
+      ),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime?>(updatedAt),
+    };
+  }
+
+  QurbanParticipantEntity copyWith({
+    int? id,
+    Value<String?> remoteId = const Value.absent(),
+    String? name,
+    Value<String?> phone = const Value.absent(),
+    Value<String?> address = const Value.absent(),
+    Value<String?> notes = const Value.absent(),
+    DateTime? startMonth,
+    double? monthlyAmount,
+    int? totalMonths,
+    domain_status.SyncStatus? syncStatus,
+    DateTime? createdAt,
+    Value<DateTime?> updatedAt = const Value.absent(),
+  }) => QurbanParticipantEntity(
+    id: id ?? this.id,
+    remoteId: remoteId.present ? remoteId.value : this.remoteId,
+    name: name ?? this.name,
+    phone: phone.present ? phone.value : this.phone,
+    address: address.present ? address.value : this.address,
+    notes: notes.present ? notes.value : this.notes,
+    startMonth: startMonth ?? this.startMonth,
+    monthlyAmount: monthlyAmount ?? this.monthlyAmount,
+    totalMonths: totalMonths ?? this.totalMonths,
+    syncStatus: syncStatus ?? this.syncStatus,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
+  );
+  QurbanParticipantEntity copyWithCompanion(QurbanParticipantsCompanion data) {
+    return QurbanParticipantEntity(
+      id: data.id.present ? data.id.value : this.id,
+      remoteId: data.remoteId.present ? data.remoteId.value : this.remoteId,
+      name: data.name.present ? data.name.value : this.name,
+      phone: data.phone.present ? data.phone.value : this.phone,
+      address: data.address.present ? data.address.value : this.address,
+      notes: data.notes.present ? data.notes.value : this.notes,
+      startMonth: data.startMonth.present
+          ? data.startMonth.value
+          : this.startMonth,
+      monthlyAmount: data.monthlyAmount.present
+          ? data.monthlyAmount.value
+          : this.monthlyAmount,
+      totalMonths: data.totalMonths.present
+          ? data.totalMonths.value
+          : this.totalMonths,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('QurbanParticipantEntity(')
+          ..write('id: $id, ')
+          ..write('remoteId: $remoteId, ')
+          ..write('name: $name, ')
+          ..write('phone: $phone, ')
+          ..write('address: $address, ')
+          ..write('notes: $notes, ')
+          ..write('startMonth: $startMonth, ')
+          ..write('monthlyAmount: $monthlyAmount, ')
+          ..write('totalMonths: $totalMonths, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    remoteId,
+    name,
+    phone,
+    address,
+    notes,
+    startMonth,
+    monthlyAmount,
+    totalMonths,
+    syncStatus,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is QurbanParticipantEntity &&
+          other.id == this.id &&
+          other.remoteId == this.remoteId &&
+          other.name == this.name &&
+          other.phone == this.phone &&
+          other.address == this.address &&
+          other.notes == this.notes &&
+          other.startMonth == this.startMonth &&
+          other.monthlyAmount == this.monthlyAmount &&
+          other.totalMonths == this.totalMonths &&
+          other.syncStatus == this.syncStatus &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class QurbanParticipantsCompanion
+    extends UpdateCompanion<QurbanParticipantEntity> {
+  final Value<int> id;
+  final Value<String?> remoteId;
+  final Value<String> name;
+  final Value<String?> phone;
+  final Value<String?> address;
+  final Value<String?> notes;
+  final Value<DateTime> startMonth;
+  final Value<double> monthlyAmount;
+  final Value<int> totalMonths;
+  final Value<domain_status.SyncStatus> syncStatus;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> updatedAt;
+  const QurbanParticipantsCompanion({
+    this.id = const Value.absent(),
+    this.remoteId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.phone = const Value.absent(),
+    this.address = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.startMonth = const Value.absent(),
+    this.monthlyAmount = const Value.absent(),
+    this.totalMonths = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  QurbanParticipantsCompanion.insert({
+    this.id = const Value.absent(),
+    this.remoteId = const Value.absent(),
+    required String name,
+    this.phone = const Value.absent(),
+    this.address = const Value.absent(),
+    this.notes = const Value.absent(),
+    required DateTime startMonth,
+    required double monthlyAmount,
+    this.totalMonths = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  }) : name = Value(name),
+       startMonth = Value(startMonth),
+       monthlyAmount = Value(monthlyAmount);
+  static Insertable<QurbanParticipantEntity> custom({
+    Expression<int>? id,
+    Expression<String>? remoteId,
+    Expression<String>? name,
+    Expression<String>? phone,
+    Expression<String>? address,
+    Expression<String>? notes,
+    Expression<DateTime>? startMonth,
+    Expression<double>? monthlyAmount,
+    Expression<int>? totalMonths,
+    Expression<int>? syncStatus,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (remoteId != null) 'remote_id': remoteId,
+      if (name != null) 'name': name,
+      if (phone != null) 'phone': phone,
+      if (address != null) 'address': address,
+      if (notes != null) 'notes': notes,
+      if (startMonth != null) 'start_month': startMonth,
+      if (monthlyAmount != null) 'monthly_amount': monthlyAmount,
+      if (totalMonths != null) 'total_months': totalMonths,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  QurbanParticipantsCompanion copyWith({
+    Value<int>? id,
+    Value<String?>? remoteId,
+    Value<String>? name,
+    Value<String?>? phone,
+    Value<String?>? address,
+    Value<String?>? notes,
+    Value<DateTime>? startMonth,
+    Value<double>? monthlyAmount,
+    Value<int>? totalMonths,
+    Value<domain_status.SyncStatus>? syncStatus,
+    Value<DateTime>? createdAt,
+    Value<DateTime?>? updatedAt,
+  }) {
+    return QurbanParticipantsCompanion(
+      id: id ?? this.id,
+      remoteId: remoteId ?? this.remoteId,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      address: address ?? this.address,
+      notes: notes ?? this.notes,
+      startMonth: startMonth ?? this.startMonth,
+      monthlyAmount: monthlyAmount ?? this.monthlyAmount,
+      totalMonths: totalMonths ?? this.totalMonths,
+      syncStatus: syncStatus ?? this.syncStatus,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (remoteId.present) {
+      map['remote_id'] = Variable<String>(remoteId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (phone.present) {
+      map['phone'] = Variable<String>(phone.value);
+    }
+    if (address.present) {
+      map['address'] = Variable<String>(address.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
+    if (startMonth.present) {
+      map['start_month'] = Variable<DateTime>(startMonth.value);
+    }
+    if (monthlyAmount.present) {
+      map['monthly_amount'] = Variable<double>(monthlyAmount.value);
+    }
+    if (totalMonths.present) {
+      map['total_months'] = Variable<int>(totalMonths.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(
+        $QurbanParticipantsTable.$convertersyncStatus.toSql(syncStatus.value),
+      );
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('QurbanParticipantsCompanion(')
+          ..write('id: $id, ')
+          ..write('remoteId: $remoteId, ')
+          ..write('name: $name, ')
+          ..write('phone: $phone, ')
+          ..write('address: $address, ')
+          ..write('notes: $notes, ')
+          ..write('startMonth: $startMonth, ')
+          ..write('monthlyAmount: $monthlyAmount, ')
+          ..write('totalMonths: $totalMonths, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $QurbanPaymentsTable extends QurbanPayments
+    with TableInfo<$QurbanPaymentsTable, QurbanPaymentEntity> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $QurbanPaymentsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _remoteIdMeta = const VerificationMeta(
+    'remoteId',
+  );
+  @override
+  late final GeneratedColumn<String> remoteId = GeneratedColumn<String>(
+    'remote_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _participantIdMeta = const VerificationMeta(
+    'participantId',
+  );
+  @override
+  late final GeneratedColumn<int> participantId = GeneratedColumn<int>(
+    'participant_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _transactionIdMeta = const VerificationMeta(
+    'transactionId',
+  );
+  @override
+  late final GeneratedColumn<int> transactionId = GeneratedColumn<int>(
+    'transaction_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _amountMeta = const VerificationMeta('amount');
+  @override
+  late final GeneratedColumn<double> amount = GeneratedColumn<double>(
+    'amount',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _paymentDateMeta = const VerificationMeta(
+    'paymentDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> paymentDate = GeneratedColumn<DateTime>(
+    'payment_date',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<domain_status.SyncStatus, int>
+  syncStatus =
+      GeneratedColumn<int>(
+        'sync_status',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(1),
+      ).withConverter<domain_status.SyncStatus>(
+        $QurbanPaymentsTable.$convertersyncStatus,
+      );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    remoteId,
+    participantId,
+    transactionId,
+    amount,
+    paymentDate,
+    note,
+    syncStatus,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'qurban_payments';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<QurbanPaymentEntity> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('remote_id')) {
+      context.handle(
+        _remoteIdMeta,
+        remoteId.isAcceptableOrUnknown(data['remote_id']!, _remoteIdMeta),
+      );
+    }
+    if (data.containsKey('participant_id')) {
+      context.handle(
+        _participantIdMeta,
+        participantId.isAcceptableOrUnknown(
+          data['participant_id']!,
+          _participantIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_participantIdMeta);
+    }
+    if (data.containsKey('transaction_id')) {
+      context.handle(
+        _transactionIdMeta,
+        transactionId.isAcceptableOrUnknown(
+          data['transaction_id']!,
+          _transactionIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('amount')) {
+      context.handle(
+        _amountMeta,
+        amount.isAcceptableOrUnknown(data['amount']!, _amountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_amountMeta);
+    }
+    if (data.containsKey('payment_date')) {
+      context.handle(
+        _paymentDateMeta,
+        paymentDate.isAcceptableOrUnknown(
+          data['payment_date']!,
+          _paymentDateMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_paymentDateMeta);
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  QurbanPaymentEntity map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return QurbanPaymentEntity(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      remoteId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_id'],
+      ),
+      participantId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}participant_id'],
+      )!,
+      transactionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}transaction_id'],
+      ),
+      amount: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}amount'],
+      )!,
+      paymentDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}payment_date'],
+      )!,
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      ),
+      syncStatus: $QurbanPaymentsTable.$convertersyncStatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}sync_status'],
+        )!,
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      ),
+    );
+  }
+
+  @override
+  $QurbanPaymentsTable createAlias(String alias) {
+    return $QurbanPaymentsTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<domain_status.SyncStatus, int, int>
+  $convertersyncStatus = const EnumIndexConverter<domain_status.SyncStatus>(
+    domain_status.SyncStatus.values,
+  );
+}
+
+class QurbanPaymentEntity extends DataClass
+    implements Insertable<QurbanPaymentEntity> {
+  final int id;
+  final String? remoteId;
+  final int participantId;
+  final int? transactionId;
+  final double amount;
+  final DateTime paymentDate;
+  final String? note;
+  final domain_status.SyncStatus syncStatus;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  const QurbanPaymentEntity({
+    required this.id,
+    this.remoteId,
+    required this.participantId,
+    this.transactionId,
+    required this.amount,
+    required this.paymentDate,
+    this.note,
+    required this.syncStatus,
+    required this.createdAt,
+    this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || remoteId != null) {
+      map['remote_id'] = Variable<String>(remoteId);
+    }
+    map['participant_id'] = Variable<int>(participantId);
+    if (!nullToAbsent || transactionId != null) {
+      map['transaction_id'] = Variable<int>(transactionId);
+    }
+    map['amount'] = Variable<double>(amount);
+    map['payment_date'] = Variable<DateTime>(paymentDate);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    {
+      map['sync_status'] = Variable<int>(
+        $QurbanPaymentsTable.$convertersyncStatus.toSql(syncStatus),
+      );
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || updatedAt != null) {
+      map['updated_at'] = Variable<DateTime>(updatedAt);
+    }
+    return map;
+  }
+
+  QurbanPaymentsCompanion toCompanion(bool nullToAbsent) {
+    return QurbanPaymentsCompanion(
+      id: Value(id),
+      remoteId: remoteId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(remoteId),
+      participantId: Value(participantId),
+      transactionId: transactionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transactionId),
+      amount: Value(amount),
+      paymentDate: Value(paymentDate),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+      syncStatus: Value(syncStatus),
+      createdAt: Value(createdAt),
+      updatedAt: updatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(updatedAt),
+    );
+  }
+
+  factory QurbanPaymentEntity.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return QurbanPaymentEntity(
+      id: serializer.fromJson<int>(json['id']),
+      remoteId: serializer.fromJson<String?>(json['remoteId']),
+      participantId: serializer.fromJson<int>(json['participantId']),
+      transactionId: serializer.fromJson<int?>(json['transactionId']),
+      amount: serializer.fromJson<double>(json['amount']),
+      paymentDate: serializer.fromJson<DateTime>(json['paymentDate']),
+      note: serializer.fromJson<String?>(json['note']),
+      syncStatus: $QurbanPaymentsTable.$convertersyncStatus.fromJson(
+        serializer.fromJson<int>(json['syncStatus']),
+      ),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime?>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'remoteId': serializer.toJson<String?>(remoteId),
+      'participantId': serializer.toJson<int>(participantId),
+      'transactionId': serializer.toJson<int?>(transactionId),
+      'amount': serializer.toJson<double>(amount),
+      'paymentDate': serializer.toJson<DateTime>(paymentDate),
+      'note': serializer.toJson<String?>(note),
+      'syncStatus': serializer.toJson<int>(
+        $QurbanPaymentsTable.$convertersyncStatus.toJson(syncStatus),
+      ),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime?>(updatedAt),
+    };
+  }
+
+  QurbanPaymentEntity copyWith({
+    int? id,
+    Value<String?> remoteId = const Value.absent(),
+    int? participantId,
+    Value<int?> transactionId = const Value.absent(),
+    double? amount,
+    DateTime? paymentDate,
+    Value<String?> note = const Value.absent(),
+    domain_status.SyncStatus? syncStatus,
+    DateTime? createdAt,
+    Value<DateTime?> updatedAt = const Value.absent(),
+  }) => QurbanPaymentEntity(
+    id: id ?? this.id,
+    remoteId: remoteId.present ? remoteId.value : this.remoteId,
+    participantId: participantId ?? this.participantId,
+    transactionId: transactionId.present
+        ? transactionId.value
+        : this.transactionId,
+    amount: amount ?? this.amount,
+    paymentDate: paymentDate ?? this.paymentDate,
+    note: note.present ? note.value : this.note,
+    syncStatus: syncStatus ?? this.syncStatus,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
+  );
+  QurbanPaymentEntity copyWithCompanion(QurbanPaymentsCompanion data) {
+    return QurbanPaymentEntity(
+      id: data.id.present ? data.id.value : this.id,
+      remoteId: data.remoteId.present ? data.remoteId.value : this.remoteId,
+      participantId: data.participantId.present
+          ? data.participantId.value
+          : this.participantId,
+      transactionId: data.transactionId.present
+          ? data.transactionId.value
+          : this.transactionId,
+      amount: data.amount.present ? data.amount.value : this.amount,
+      paymentDate: data.paymentDate.present
+          ? data.paymentDate.value
+          : this.paymentDate,
+      note: data.note.present ? data.note.value : this.note,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('QurbanPaymentEntity(')
+          ..write('id: $id, ')
+          ..write('remoteId: $remoteId, ')
+          ..write('participantId: $participantId, ')
+          ..write('transactionId: $transactionId, ')
+          ..write('amount: $amount, ')
+          ..write('paymentDate: $paymentDate, ')
+          ..write('note: $note, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    remoteId,
+    participantId,
+    transactionId,
+    amount,
+    paymentDate,
+    note,
+    syncStatus,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is QurbanPaymentEntity &&
+          other.id == this.id &&
+          other.remoteId == this.remoteId &&
+          other.participantId == this.participantId &&
+          other.transactionId == this.transactionId &&
+          other.amount == this.amount &&
+          other.paymentDate == this.paymentDate &&
+          other.note == this.note &&
+          other.syncStatus == this.syncStatus &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class QurbanPaymentsCompanion extends UpdateCompanion<QurbanPaymentEntity> {
+  final Value<int> id;
+  final Value<String?> remoteId;
+  final Value<int> participantId;
+  final Value<int?> transactionId;
+  final Value<double> amount;
+  final Value<DateTime> paymentDate;
+  final Value<String?> note;
+  final Value<domain_status.SyncStatus> syncStatus;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> updatedAt;
+  const QurbanPaymentsCompanion({
+    this.id = const Value.absent(),
+    this.remoteId = const Value.absent(),
+    this.participantId = const Value.absent(),
+    this.transactionId = const Value.absent(),
+    this.amount = const Value.absent(),
+    this.paymentDate = const Value.absent(),
+    this.note = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  QurbanPaymentsCompanion.insert({
+    this.id = const Value.absent(),
+    this.remoteId = const Value.absent(),
+    required int participantId,
+    this.transactionId = const Value.absent(),
+    required double amount,
+    required DateTime paymentDate,
+    this.note = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  }) : participantId = Value(participantId),
+       amount = Value(amount),
+       paymentDate = Value(paymentDate);
+  static Insertable<QurbanPaymentEntity> custom({
+    Expression<int>? id,
+    Expression<String>? remoteId,
+    Expression<int>? participantId,
+    Expression<int>? transactionId,
+    Expression<double>? amount,
+    Expression<DateTime>? paymentDate,
+    Expression<String>? note,
+    Expression<int>? syncStatus,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (remoteId != null) 'remote_id': remoteId,
+      if (participantId != null) 'participant_id': participantId,
+      if (transactionId != null) 'transaction_id': transactionId,
+      if (amount != null) 'amount': amount,
+      if (paymentDate != null) 'payment_date': paymentDate,
+      if (note != null) 'note': note,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  QurbanPaymentsCompanion copyWith({
+    Value<int>? id,
+    Value<String?>? remoteId,
+    Value<int>? participantId,
+    Value<int?>? transactionId,
+    Value<double>? amount,
+    Value<DateTime>? paymentDate,
+    Value<String?>? note,
+    Value<domain_status.SyncStatus>? syncStatus,
+    Value<DateTime>? createdAt,
+    Value<DateTime?>? updatedAt,
+  }) {
+    return QurbanPaymentsCompanion(
+      id: id ?? this.id,
+      remoteId: remoteId ?? this.remoteId,
+      participantId: participantId ?? this.participantId,
+      transactionId: transactionId ?? this.transactionId,
+      amount: amount ?? this.amount,
+      paymentDate: paymentDate ?? this.paymentDate,
+      note: note ?? this.note,
+      syncStatus: syncStatus ?? this.syncStatus,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (remoteId.present) {
+      map['remote_id'] = Variable<String>(remoteId.value);
+    }
+    if (participantId.present) {
+      map['participant_id'] = Variable<int>(participantId.value);
+    }
+    if (transactionId.present) {
+      map['transaction_id'] = Variable<int>(transactionId.value);
+    }
+    if (amount.present) {
+      map['amount'] = Variable<double>(amount.value);
+    }
+    if (paymentDate.present) {
+      map['payment_date'] = Variable<DateTime>(paymentDate.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(
+        $QurbanPaymentsTable.$convertersyncStatus.toSql(syncStatus.value),
+      );
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('QurbanPaymentsCompanion(')
+          ..write('id: $id, ')
+          ..write('remoteId: $remoteId, ')
+          ..write('participantId: $participantId, ')
+          ..write('transactionId: $transactionId, ')
+          ..write('amount: $amount, ')
+          ..write('paymentDate: $paymentDate, ')
+          ..write('note: $note, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2931,6 +4885,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $MosqueProfilesTable mosqueProfiles = $MosqueProfilesTable(this);
   late final $UsersTable users = $UsersTable(this);
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
+  late final $QurbanPackagesTable qurbanPackages = $QurbanPackagesTable(this);
+  late final $QurbanParticipantsTable qurbanParticipants =
+      $QurbanParticipantsTable(this);
+  late final $QurbanPaymentsTable qurbanPayments = $QurbanPaymentsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2941,6 +4899,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     mosqueProfiles,
     users,
     auditLogs,
+    qurbanPackages,
+    qurbanParticipants,
+    qurbanPayments,
   ];
 }
 
@@ -2955,6 +4916,8 @@ typedef $$TransactionsTableCreateCompanionBuilder =
       required DateTime date,
       Value<List<String>> proofPaths,
       Value<List<String>> proofUrls,
+      Value<String> source,
+      Value<String?> sourceRef,
       Value<domain_status.SyncStatus> syncStatus,
       Value<DateTime> createdAt,
       Value<DateTime?> updatedAt,
@@ -2970,6 +4933,8 @@ typedef $$TransactionsTableUpdateCompanionBuilder =
       Value<DateTime> date,
       Value<List<String>> proofPaths,
       Value<List<String>> proofUrls,
+      Value<String> source,
+      Value<String?> sourceRef,
       Value<domain_status.SyncStatus> syncStatus,
       Value<DateTime> createdAt,
       Value<DateTime?> updatedAt,
@@ -3034,6 +4999,16 @@ class $$TransactionsTableFilterComposer
   get proofUrls => $composableBuilder(
     column: $table.proofUrls,
     builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceRef => $composableBuilder(
+    column: $table.sourceRef,
+    builder: (column) => ColumnFilters(column),
   );
 
   ColumnWithTypeConverterFilters<
@@ -3111,6 +5086,16 @@ class $$TransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceRef => $composableBuilder(
+    column: $table.sourceRef,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get syncStatus => $composableBuilder(
     column: $table.syncStatus,
     builder: (column) => ColumnOrderings(column),
@@ -3168,6 +5153,12 @@ class $$TransactionsTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<List<String>, String> get proofUrls =>
       $composableBuilder(column: $table.proofUrls, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceRef =>
+      $composableBuilder(column: $table.sourceRef, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<domain_status.SyncStatus, int>
   get syncStatus => $composableBuilder(
@@ -3227,6 +5218,8 @@ class $$TransactionsTableTableManager
                 Value<DateTime> date = const Value.absent(),
                 Value<List<String>> proofPaths = const Value.absent(),
                 Value<List<String>> proofUrls = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String?> sourceRef = const Value.absent(),
                 Value<domain_status.SyncStatus> syncStatus =
                     const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
@@ -3241,6 +5234,8 @@ class $$TransactionsTableTableManager
                 date: date,
                 proofPaths: proofPaths,
                 proofUrls: proofUrls,
+                source: source,
+                sourceRef: sourceRef,
                 syncStatus: syncStatus,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -3256,6 +5251,8 @@ class $$TransactionsTableTableManager
                 required DateTime date,
                 Value<List<String>> proofPaths = const Value.absent(),
                 Value<List<String>> proofUrls = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String?> sourceRef = const Value.absent(),
                 Value<domain_status.SyncStatus> syncStatus =
                     const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
@@ -3270,6 +5267,8 @@ class $$TransactionsTableTableManager
                 date: date,
                 proofPaths: proofPaths,
                 proofUrls: proofUrls,
+                source: source,
+                sourceRef: sourceRef,
                 syncStatus: syncStatus,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -4409,6 +6408,950 @@ typedef $$AuditLogsTableProcessedTableManager =
       AuditLogEntity,
       PrefetchHooks Function()
     >;
+typedef $$QurbanPackagesTableCreateCompanionBuilder =
+    QurbanPackagesCompanion Function({
+      Value<int> id,
+      Value<String?> remoteId,
+      required String name,
+      required double monthlyAmount,
+      Value<bool> isActive,
+      Value<domain_status.SyncStatus> syncStatus,
+      Value<DateTime> createdAt,
+      Value<DateTime?> updatedAt,
+    });
+typedef $$QurbanPackagesTableUpdateCompanionBuilder =
+    QurbanPackagesCompanion Function({
+      Value<int> id,
+      Value<String?> remoteId,
+      Value<String> name,
+      Value<double> monthlyAmount,
+      Value<bool> isActive,
+      Value<domain_status.SyncStatus> syncStatus,
+      Value<DateTime> createdAt,
+      Value<DateTime?> updatedAt,
+    });
+
+class $$QurbanPackagesTableFilterComposer
+    extends Composer<_$AppDatabase, $QurbanPackagesTable> {
+  $$QurbanPackagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteId => $composableBuilder(
+    column: $table.remoteId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get monthlyAmount => $composableBuilder(
+    column: $table.monthlyAmount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isActive => $composableBuilder(
+    column: $table.isActive,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<
+    domain_status.SyncStatus,
+    domain_status.SyncStatus,
+    int
+  >
+  get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$QurbanPackagesTableOrderingComposer
+    extends Composer<_$AppDatabase, $QurbanPackagesTable> {
+  $$QurbanPackagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteId => $composableBuilder(
+    column: $table.remoteId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get monthlyAmount => $composableBuilder(
+    column: $table.monthlyAmount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isActive => $composableBuilder(
+    column: $table.isActive,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$QurbanPackagesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $QurbanPackagesTable> {
+  $$QurbanPackagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get remoteId =>
+      $composableBuilder(column: $table.remoteId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<double> get monthlyAmount => $composableBuilder(
+    column: $table.monthlyAmount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isActive =>
+      $composableBuilder(column: $table.isActive, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<domain_status.SyncStatus, int>
+  get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$QurbanPackagesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $QurbanPackagesTable,
+          QurbanPackageEntity,
+          $$QurbanPackagesTableFilterComposer,
+          $$QurbanPackagesTableOrderingComposer,
+          $$QurbanPackagesTableAnnotationComposer,
+          $$QurbanPackagesTableCreateCompanionBuilder,
+          $$QurbanPackagesTableUpdateCompanionBuilder,
+          (
+            QurbanPackageEntity,
+            BaseReferences<
+              _$AppDatabase,
+              $QurbanPackagesTable,
+              QurbanPackageEntity
+            >,
+          ),
+          QurbanPackageEntity,
+          PrefetchHooks Function()
+        > {
+  $$QurbanPackagesTableTableManager(
+    _$AppDatabase db,
+    $QurbanPackagesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$QurbanPackagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$QurbanPackagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$QurbanPackagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String?> remoteId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<double> monthlyAmount = const Value.absent(),
+                Value<bool> isActive = const Value.absent(),
+                Value<domain_status.SyncStatus> syncStatus =
+                    const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> updatedAt = const Value.absent(),
+              }) => QurbanPackagesCompanion(
+                id: id,
+                remoteId: remoteId,
+                name: name,
+                monthlyAmount: monthlyAmount,
+                isActive: isActive,
+                syncStatus: syncStatus,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String?> remoteId = const Value.absent(),
+                required String name,
+                required double monthlyAmount,
+                Value<bool> isActive = const Value.absent(),
+                Value<domain_status.SyncStatus> syncStatus =
+                    const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> updatedAt = const Value.absent(),
+              }) => QurbanPackagesCompanion.insert(
+                id: id,
+                remoteId: remoteId,
+                name: name,
+                monthlyAmount: monthlyAmount,
+                isActive: isActive,
+                syncStatus: syncStatus,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$QurbanPackagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $QurbanPackagesTable,
+      QurbanPackageEntity,
+      $$QurbanPackagesTableFilterComposer,
+      $$QurbanPackagesTableOrderingComposer,
+      $$QurbanPackagesTableAnnotationComposer,
+      $$QurbanPackagesTableCreateCompanionBuilder,
+      $$QurbanPackagesTableUpdateCompanionBuilder,
+      (
+        QurbanPackageEntity,
+        BaseReferences<
+          _$AppDatabase,
+          $QurbanPackagesTable,
+          QurbanPackageEntity
+        >,
+      ),
+      QurbanPackageEntity,
+      PrefetchHooks Function()
+    >;
+typedef $$QurbanParticipantsTableCreateCompanionBuilder =
+    QurbanParticipantsCompanion Function({
+      Value<int> id,
+      Value<String?> remoteId,
+      required String name,
+      Value<String?> phone,
+      Value<String?> address,
+      Value<String?> notes,
+      required DateTime startMonth,
+      required double monthlyAmount,
+      Value<int> totalMonths,
+      Value<domain_status.SyncStatus> syncStatus,
+      Value<DateTime> createdAt,
+      Value<DateTime?> updatedAt,
+    });
+typedef $$QurbanParticipantsTableUpdateCompanionBuilder =
+    QurbanParticipantsCompanion Function({
+      Value<int> id,
+      Value<String?> remoteId,
+      Value<String> name,
+      Value<String?> phone,
+      Value<String?> address,
+      Value<String?> notes,
+      Value<DateTime> startMonth,
+      Value<double> monthlyAmount,
+      Value<int> totalMonths,
+      Value<domain_status.SyncStatus> syncStatus,
+      Value<DateTime> createdAt,
+      Value<DateTime?> updatedAt,
+    });
+
+class $$QurbanParticipantsTableFilterComposer
+    extends Composer<_$AppDatabase, $QurbanParticipantsTable> {
+  $$QurbanParticipantsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteId => $composableBuilder(
+    column: $table.remoteId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get phone => $composableBuilder(
+    column: $table.phone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get address => $composableBuilder(
+    column: $table.address,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get startMonth => $composableBuilder(
+    column: $table.startMonth,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get monthlyAmount => $composableBuilder(
+    column: $table.monthlyAmount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get totalMonths => $composableBuilder(
+    column: $table.totalMonths,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<
+    domain_status.SyncStatus,
+    domain_status.SyncStatus,
+    int
+  >
+  get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$QurbanParticipantsTableOrderingComposer
+    extends Composer<_$AppDatabase, $QurbanParticipantsTable> {
+  $$QurbanParticipantsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteId => $composableBuilder(
+    column: $table.remoteId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get phone => $composableBuilder(
+    column: $table.phone,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get address => $composableBuilder(
+    column: $table.address,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get startMonth => $composableBuilder(
+    column: $table.startMonth,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get monthlyAmount => $composableBuilder(
+    column: $table.monthlyAmount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get totalMonths => $composableBuilder(
+    column: $table.totalMonths,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$QurbanParticipantsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $QurbanParticipantsTable> {
+  $$QurbanParticipantsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get remoteId =>
+      $composableBuilder(column: $table.remoteId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get phone =>
+      $composableBuilder(column: $table.phone, builder: (column) => column);
+
+  GeneratedColumn<String> get address =>
+      $composableBuilder(column: $table.address, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get startMonth => $composableBuilder(
+    column: $table.startMonth,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get monthlyAmount => $composableBuilder(
+    column: $table.monthlyAmount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get totalMonths => $composableBuilder(
+    column: $table.totalMonths,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<domain_status.SyncStatus, int>
+  get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$QurbanParticipantsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $QurbanParticipantsTable,
+          QurbanParticipantEntity,
+          $$QurbanParticipantsTableFilterComposer,
+          $$QurbanParticipantsTableOrderingComposer,
+          $$QurbanParticipantsTableAnnotationComposer,
+          $$QurbanParticipantsTableCreateCompanionBuilder,
+          $$QurbanParticipantsTableUpdateCompanionBuilder,
+          (
+            QurbanParticipantEntity,
+            BaseReferences<
+              _$AppDatabase,
+              $QurbanParticipantsTable,
+              QurbanParticipantEntity
+            >,
+          ),
+          QurbanParticipantEntity,
+          PrefetchHooks Function()
+        > {
+  $$QurbanParticipantsTableTableManager(
+    _$AppDatabase db,
+    $QurbanParticipantsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$QurbanParticipantsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$QurbanParticipantsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$QurbanParticipantsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String?> remoteId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String?> phone = const Value.absent(),
+                Value<String?> address = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
+                Value<DateTime> startMonth = const Value.absent(),
+                Value<double> monthlyAmount = const Value.absent(),
+                Value<int> totalMonths = const Value.absent(),
+                Value<domain_status.SyncStatus> syncStatus =
+                    const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> updatedAt = const Value.absent(),
+              }) => QurbanParticipantsCompanion(
+                id: id,
+                remoteId: remoteId,
+                name: name,
+                phone: phone,
+                address: address,
+                notes: notes,
+                startMonth: startMonth,
+                monthlyAmount: monthlyAmount,
+                totalMonths: totalMonths,
+                syncStatus: syncStatus,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String?> remoteId = const Value.absent(),
+                required String name,
+                Value<String?> phone = const Value.absent(),
+                Value<String?> address = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
+                required DateTime startMonth,
+                required double monthlyAmount,
+                Value<int> totalMonths = const Value.absent(),
+                Value<domain_status.SyncStatus> syncStatus =
+                    const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> updatedAt = const Value.absent(),
+              }) => QurbanParticipantsCompanion.insert(
+                id: id,
+                remoteId: remoteId,
+                name: name,
+                phone: phone,
+                address: address,
+                notes: notes,
+                startMonth: startMonth,
+                monthlyAmount: monthlyAmount,
+                totalMonths: totalMonths,
+                syncStatus: syncStatus,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$QurbanParticipantsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $QurbanParticipantsTable,
+      QurbanParticipantEntity,
+      $$QurbanParticipantsTableFilterComposer,
+      $$QurbanParticipantsTableOrderingComposer,
+      $$QurbanParticipantsTableAnnotationComposer,
+      $$QurbanParticipantsTableCreateCompanionBuilder,
+      $$QurbanParticipantsTableUpdateCompanionBuilder,
+      (
+        QurbanParticipantEntity,
+        BaseReferences<
+          _$AppDatabase,
+          $QurbanParticipantsTable,
+          QurbanParticipantEntity
+        >,
+      ),
+      QurbanParticipantEntity,
+      PrefetchHooks Function()
+    >;
+typedef $$QurbanPaymentsTableCreateCompanionBuilder =
+    QurbanPaymentsCompanion Function({
+      Value<int> id,
+      Value<String?> remoteId,
+      required int participantId,
+      Value<int?> transactionId,
+      required double amount,
+      required DateTime paymentDate,
+      Value<String?> note,
+      Value<domain_status.SyncStatus> syncStatus,
+      Value<DateTime> createdAt,
+      Value<DateTime?> updatedAt,
+    });
+typedef $$QurbanPaymentsTableUpdateCompanionBuilder =
+    QurbanPaymentsCompanion Function({
+      Value<int> id,
+      Value<String?> remoteId,
+      Value<int> participantId,
+      Value<int?> transactionId,
+      Value<double> amount,
+      Value<DateTime> paymentDate,
+      Value<String?> note,
+      Value<domain_status.SyncStatus> syncStatus,
+      Value<DateTime> createdAt,
+      Value<DateTime?> updatedAt,
+    });
+
+class $$QurbanPaymentsTableFilterComposer
+    extends Composer<_$AppDatabase, $QurbanPaymentsTable> {
+  $$QurbanPaymentsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteId => $composableBuilder(
+    column: $table.remoteId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get participantId => $composableBuilder(
+    column: $table.participantId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get transactionId => $composableBuilder(
+    column: $table.transactionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get amount => $composableBuilder(
+    column: $table.amount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get paymentDate => $composableBuilder(
+    column: $table.paymentDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<
+    domain_status.SyncStatus,
+    domain_status.SyncStatus,
+    int
+  >
+  get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$QurbanPaymentsTableOrderingComposer
+    extends Composer<_$AppDatabase, $QurbanPaymentsTable> {
+  $$QurbanPaymentsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteId => $composableBuilder(
+    column: $table.remoteId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get participantId => $composableBuilder(
+    column: $table.participantId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get transactionId => $composableBuilder(
+    column: $table.transactionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get amount => $composableBuilder(
+    column: $table.amount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get paymentDate => $composableBuilder(
+    column: $table.paymentDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$QurbanPaymentsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $QurbanPaymentsTable> {
+  $$QurbanPaymentsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get remoteId =>
+      $composableBuilder(column: $table.remoteId, builder: (column) => column);
+
+  GeneratedColumn<int> get participantId => $composableBuilder(
+    column: $table.participantId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get transactionId => $composableBuilder(
+    column: $table.transactionId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get amount =>
+      $composableBuilder(column: $table.amount, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get paymentDate => $composableBuilder(
+    column: $table.paymentDate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<domain_status.SyncStatus, int>
+  get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$QurbanPaymentsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $QurbanPaymentsTable,
+          QurbanPaymentEntity,
+          $$QurbanPaymentsTableFilterComposer,
+          $$QurbanPaymentsTableOrderingComposer,
+          $$QurbanPaymentsTableAnnotationComposer,
+          $$QurbanPaymentsTableCreateCompanionBuilder,
+          $$QurbanPaymentsTableUpdateCompanionBuilder,
+          (
+            QurbanPaymentEntity,
+            BaseReferences<
+              _$AppDatabase,
+              $QurbanPaymentsTable,
+              QurbanPaymentEntity
+            >,
+          ),
+          QurbanPaymentEntity,
+          PrefetchHooks Function()
+        > {
+  $$QurbanPaymentsTableTableManager(
+    _$AppDatabase db,
+    $QurbanPaymentsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$QurbanPaymentsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$QurbanPaymentsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$QurbanPaymentsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String?> remoteId = const Value.absent(),
+                Value<int> participantId = const Value.absent(),
+                Value<int?> transactionId = const Value.absent(),
+                Value<double> amount = const Value.absent(),
+                Value<DateTime> paymentDate = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                Value<domain_status.SyncStatus> syncStatus =
+                    const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> updatedAt = const Value.absent(),
+              }) => QurbanPaymentsCompanion(
+                id: id,
+                remoteId: remoteId,
+                participantId: participantId,
+                transactionId: transactionId,
+                amount: amount,
+                paymentDate: paymentDate,
+                note: note,
+                syncStatus: syncStatus,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String?> remoteId = const Value.absent(),
+                required int participantId,
+                Value<int?> transactionId = const Value.absent(),
+                required double amount,
+                required DateTime paymentDate,
+                Value<String?> note = const Value.absent(),
+                Value<domain_status.SyncStatus> syncStatus =
+                    const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> updatedAt = const Value.absent(),
+              }) => QurbanPaymentsCompanion.insert(
+                id: id,
+                remoteId: remoteId,
+                participantId: participantId,
+                transactionId: transactionId,
+                amount: amount,
+                paymentDate: paymentDate,
+                note: note,
+                syncStatus: syncStatus,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$QurbanPaymentsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $QurbanPaymentsTable,
+      QurbanPaymentEntity,
+      $$QurbanPaymentsTableFilterComposer,
+      $$QurbanPaymentsTableOrderingComposer,
+      $$QurbanPaymentsTableAnnotationComposer,
+      $$QurbanPaymentsTableCreateCompanionBuilder,
+      $$QurbanPaymentsTableUpdateCompanionBuilder,
+      (
+        QurbanPaymentEntity,
+        BaseReferences<
+          _$AppDatabase,
+          $QurbanPaymentsTable,
+          QurbanPaymentEntity
+        >,
+      ),
+      QurbanPaymentEntity,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4423,4 +7366,10 @@ class $AppDatabaseManager {
       $$UsersTableTableManager(_db, _db.users);
   $$AuditLogsTableTableManager get auditLogs =>
       $$AuditLogsTableTableManager(_db, _db.auditLogs);
+  $$QurbanPackagesTableTableManager get qurbanPackages =>
+      $$QurbanPackagesTableTableManager(_db, _db.qurbanPackages);
+  $$QurbanParticipantsTableTableManager get qurbanParticipants =>
+      $$QurbanParticipantsTableTableManager(_db, _db.qurbanParticipants);
+  $$QurbanPaymentsTableTableManager get qurbanPayments =>
+      $$QurbanPaymentsTableTableManager(_db, _db.qurbanPayments);
 }

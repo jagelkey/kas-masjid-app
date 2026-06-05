@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:masjid_app/core/di/injection.dart';
 import 'package:masjid_app/core/router/app_router.dart';
+import 'package:masjid_app/core/theme/app_theme.dart';
 import 'package:masjid_app/presentation/blocs/transaction/transaction_bloc.dart';
 import 'package:masjid_app/domain/repositories/transaction_repository.dart';
 
@@ -13,6 +13,7 @@ import 'package:masjid_app/domain/repositories/activity_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart';
 import 'package:masjid_app/presentation/blocs/profile/profile_bloc.dart';
+import 'package:masjid_app/presentation/blocs/qurban/qurban_bloc.dart';
 import 'package:masjid_app/presentation/blocs/sync/sync_cubit.dart';
 import 'package:masjid_app/domain/repositories/mosque_profile_repository.dart';
 import 'package:masjid_app/core/constants/env.dart';
@@ -36,7 +37,7 @@ Future<void> _bootstrapApp() async {
   }
 
   configureDependencies();
-  
+
   try {
     await initializeDateFormatting('id_ID', null);
   } catch (e) {
@@ -55,36 +56,26 @@ class MyApp extends StatelessWidget {
           create: (context) => getIt<AuthBloc>()..add(CheckAuthStatus()),
         ),
         BlocProvider<TransactionBloc>(
-          create: (context) => TransactionBloc(getIt<TransactionRepository>())
-            ..add(LoadTransactions()),
+          create: (context) =>
+              TransactionBloc(getIt<TransactionRepository>())
+                ..add(LoadTransactions()),
         ),
         BlocProvider<ActivityBloc>(
-          create: (context) => ActivityBloc(getIt<ActivityRepository>())
-            ..add(LoadActivities()),
+          create: (context) =>
+              ActivityBloc(getIt<ActivityRepository>())..add(LoadActivities()),
         ),
         BlocProvider<ProfileBloc>(
-          create: (context) => ProfileBloc(getIt<MosqueProfileRepository>())
-            ..add(LoadProfile()),
+          create: (context) =>
+              ProfileBloc(getIt<MosqueProfileRepository>())..add(LoadProfile()),
         ),
-        BlocProvider<SyncCubit>(
-          create: (context) => getIt<SyncCubit>(),
+        BlocProvider<QurbanBloc>(
+          create: (context) => getIt<QurbanBloc>()..add(LoadQurban()),
         ),
+        BlocProvider<SyncCubit>(create: (context) => getIt<SyncCubit>()),
       ],
       child: MaterialApp.router(
         title: 'Manajemen Kas Masjid',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-          useMaterial3: true,
-          textTheme: GoogleFonts.interTextTheme(),
-          inputDecorationTheme: const InputDecorationTheme(
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-          // cardTheme: CardTheme(
-          //   elevation: 2,
-          //   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          // ),
-        ),
+        theme: AppTheme.light,
         routerConfig: appRouter,
         locale: const Locale('id'),
       ),

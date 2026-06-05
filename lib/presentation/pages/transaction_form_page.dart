@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -389,174 +390,195 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.transaction == null ? 'Tambah Transaksi' : 'Edit Transaksi',
+    return BlocListener<TransactionBloc, TransactionState>(
+      listener: (context, state) {
+        if (state is TransactionOperationSuccess) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(state.operationMessage)));
+          if (mounted) context.pop();
+        } else if (state is TransactionOperationFailure) {
+          setState(() => _isSubmitting = false);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(state.operationMessage)));
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            widget.transaction == null ? 'Tambah Transaksi' : 'Edit Transaksi',
+          ),
         ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              // Type Selector
-              SegmentedButton<TransactionType>(
-                segments: const [
-                  ButtonSegment(
-                    value: TransactionType.income,
-                    label: Text('Pemasukan'),
-                    icon: Icon(Icons.arrow_downward),
-                  ),
-                  ButtonSegment(
-                    value: TransactionType.expense,
-                    label: Text('Pengeluaran'),
-                    icon: Icon(Icons.arrow_upward),
-                  ),
-                ],
-                selected: {_type},
-                onSelectionChanged: (Set<TransactionType> newSelection) {
-                  setState(() {
-                    _type = newSelection.first;
-                    _selectedCategory = null;
-                  });
-                },
-              ),
-              const SizedBox(height: 24),
-
-              // Amount
-              TextFormField(
-                controller: _amountController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Nominal (Rp)',
-                  border: OutlineInputBorder(),
-                  prefixText: 'Rp ',
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Nominal wajib diisi';
-                  }
-                  if (double.tryParse(value) == null) {
-                    return 'Format nominal salah';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Category
-              DropdownButtonFormField<String>(
-                key: ValueKey(_selectedCategory),
-                initialValue: _selectedCategory,
-                decoration: const InputDecoration(
-                  labelText: 'Kategori',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.category),
-                ),
-                items:
-                    (_type == TransactionType.income
-                            ? _incomeCategories
-                            : _expenseCategories)
-                        .map(
-                          (category) => DropdownMenuItem<String>(
-                            value: category,
-                            child: Text(category),
-                          ),
-                        )
-                        .toList(),
-                onChanged: (value) {
-                  if (value != null) {
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                // Type Selector
+                SegmentedButton<TransactionType>(
+                  segments: const [
+                    ButtonSegment(
+                      value: TransactionType.income,
+                      label: Text('Pemasukan'),
+                      icon: Icon(Icons.arrow_downward),
+                    ),
+                    ButtonSegment(
+                      value: TransactionType.expense,
+                      label: Text('Pengeluaran'),
+                      icon: Icon(Icons.arrow_upward),
+                    ),
+                  ],
+                  selected: {_type},
+                  onSelectionChanged: (Set<TransactionType> newSelection) {
                     setState(() {
-                      _selectedCategory = value;
+                      _type = newSelection.first;
+                      _selectedCategory = null;
                     });
-                  }
-                },
-                validator: (value) => value == null ? 'Pilih kategori' : null,
-              ),
-              const SizedBox(height: 16),
+                  },
+                ),
+                const SizedBox(height: 24),
 
-              // Date
-              InkWell(
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _selectedDate,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2030),
-                  );
-                  if (picked != null) {
-                    setState(() {
-                      _selectedDate = picked;
-                    });
-                  }
-                },
-                child: InputDecorator(
+                TextFormField(
+                  controller: _amountController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: const InputDecoration(
-                    labelText: 'Tanggal',
+                    labelText: 'Nominal (Rp)',
                     border: OutlineInputBorder(),
-                    suffixIcon: Icon(Icons.calendar_today),
+                    prefixText: 'Rp ',
                   ),
-                  child: Text(
-                    DateFormat('dd MMMM yyyy', 'id_ID').format(_selectedDate),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Nominal wajib diisi';
+                    }
+                    final parsedAmount = double.tryParse(
+                      value.replaceAll(',', '.'),
+                    );
+                    if (parsedAmount == null) {
+                      return 'Format nominal salah';
+                    }
+                    if (parsedAmount <= 0) {
+                      return 'Nominal harus lebih dari 0';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Category
+                DropdownButtonFormField<String>(
+                  key: ValueKey(_selectedCategory),
+                  initialValue: _selectedCategory,
+                  decoration: const InputDecoration(
+                    labelText: 'Kategori',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.category),
+                  ),
+                  items:
+                      (_type == TransactionType.income
+                              ? _incomeCategories
+                              : _expenseCategories)
+                          .map(
+                            (category) => DropdownMenuItem<String>(
+                              value: category,
+                              child: Text(category),
+                            ),
+                          )
+                          .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _selectedCategory = value;
+                      });
+                    }
+                  },
+                  validator: (value) => value == null ? 'Pilih kategori' : null,
+                ),
+                const SizedBox(height: 16),
+
+                // Date
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _selectedDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2030),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _selectedDate = picked;
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Tanggal',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.calendar_today),
+                    ),
+                    child: Text(
+                      DateFormat('dd MMMM yyyy', 'id_ID').format(_selectedDate),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              // Description
-              TextFormField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Keterangan (Opsional)',
-                  border: OutlineInputBorder(),
+                // Description
+                TextFormField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Keterangan (Opsional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
                 ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              // Proof Image
-              Container(
-                height: 150,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(12),
+                // Proof Image
+                Container(
+                  height: 150,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: _buildProofImagesList(),
                 ),
-                child: _buildProofImagesList(),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${_proofPaths.length + _proofUrls.length} / 10 foto dipilih',
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
-              ),
+                const SizedBox(height: 8),
+                Text(
+                  '${_proofPaths.length + _proofUrls.length} / 10 foto dipilih',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
 
-              const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-              // Submit Button
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: FilledButton(
-                  onPressed: _isSubmitting ? null : _submitForm,
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                // Submit Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: FilledButton(
+                    onPressed: _isSubmitting ? null : _submitForm,
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            widget.transaction == null
+                                ? 'Simpan Transaksi'
+                                : 'Update Transaksi',
                           ),
-                        )
-                      : Text(
-                          widget.transaction == null
-                              ? 'Simpan Transaksi'
-                              : 'Update Transaksi',
-                        ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -599,7 +621,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
           UpdateTransactionEvent(transaction),
         );
       }
-      context.pop();
+      // context.pop(); // Di-handle oleh BlocListener
     }
   }
 }

@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:masjid_app/data/datasources/local/app_database.dart';
 import 'package:masjid_app/data/repositories/transaction_repository_impl.dart';
 import 'package:masjid_app/data/repositories/activity_repository_impl.dart';
+import 'package:masjid_app/data/repositories/qurban_repository_impl.dart';
+import 'package:masjid_app/domain/entities/qurban.dart';
 import 'package:masjid_app/domain/entities/transaction.dart' as domain;
 import 'package:masjid_app/domain/entities/activity.dart' as activity_domain;
 import 'package:masjid_app/domain/entities/audit_log.dart';
@@ -32,6 +34,7 @@ void main() {
   late AppDatabase db;
   late TransactionRepositoryImpl repository;
   late ActivityRepositoryImpl activityRepository;
+  late QurbanRepositoryImpl qurbanRepository;
   late MockAuditLogRepository mockAuditLogRepository;
 
   setUp(() {
@@ -39,6 +42,7 @@ void main() {
     mockAuditLogRepository = MockAuditLogRepository();
     repository = TransactionRepositoryImpl(db, mockAuditLogRepository);
     activityRepository = ActivityRepositoryImpl(db, mockAuditLogRepository);
+    qurbanRepository = QurbanRepositoryImpl(db, mockAuditLogRepository);
   });
 
   tearDown(() async {
@@ -192,6 +196,47 @@ void main() {
       },
     );
 
+    test(
+      'Update transaction preserves pendingCreate if remoteId is a local UUID',
+      () async {
+        await db
+            .into(db.transactions)
+            .insert(
+              TransactionsCompanion.insert(
+                type: domain.TransactionType.income,
+                amount: 1000.0,
+                category: 'Local UUID',
+                date: DateTime.now(),
+                remoteId: const Value('local-temp-id'),
+                syncStatus: const Value(domain.SyncStatus.pendingCreate),
+              ),
+            );
+
+        final inserted = await (db.select(
+          db.transactions,
+        )..limit(1)).getSingle();
+
+        await repository.updateTransaction(
+          domain.Transaction(
+            id: inserted.id,
+            remoteId: inserted.remoteId,
+            type: domain.TransactionType.income,
+            amount: 2500.0,
+            category: 'Local UUID Updated',
+            date: DateTime.now(),
+            syncStatus: domain.SyncStatus.pendingCreate,
+          ),
+        );
+
+        final result = await (db.select(
+          db.transactions,
+        )..where((t) => t.id.equals(inserted.id))).getSingle();
+
+        expect(result.syncStatus, domain.SyncStatus.pendingCreate);
+        expect(result.amount, 2500.0);
+      },
+    );
+
     test('Update transaction sets pendingUpdate if remoteId exists', () async {
       // 1. Add synced transaction
       await db
@@ -294,6 +339,183 @@ void main() {
       )..where((t) => t.id.equals(inserted.id))).getSingle();
       expect(result.syncStatus, domain.SyncStatus.pendingUpdate);
       expect(result.title, 'Sholat Jumat Berjamaah');
+    });
+  });
+
+  group('QurbanRepository Logic', () {
+    test('Seed package defaults are available', () async {
+      final packages = await qurbanRepository.getPackages();
+
+      expect(
+        packages.map((p) => p.monthlyAmount),
+        containsAll([250000, 275000]),
+      );
+      expect(packages.every((p) => p.isActive), isTrue);
+    });
+
+    test('Participant custom amount produces 10 month target', () async {
+      await qurbanRepository.addParticipant(
+        QurbanParticipant(
+          name: 'Ahmad',
+          startMonth: DateTime(2026, 1),
+          monthlyAmount: 300000,
+        ),
+      );
+
+      final progress = await qurbanRepository.getParticipantProgress();
+
+      expect(progress.single.participant.targetAmount, 3000000);
+      expect(progress.single.participant.totalMonths, 10);
+    });
+
+    test(
+      'Flexible payments calculate paid, remaining, and overpaid status',
+      () async {
+        await qurbanRepository.addParticipant(
+          QurbanParticipant(
+            name: 'Budi',
+            startMonth: DateTime.now(),
+            monthlyAmount: 250000,
+          ),
+        );
+        final participant = (await qurbanRepository.getParticipantProgress())
+            .single
+            .participant;
+
+        await qurbanRepository.addPayment(
+          QurbanPayment(
+            participantId: participant.id!,
+            amount: 1000000,
+            paymentDate: DateTime.now(),
+          ),
+        );
+        var progress = (await qurbanRepository.getParticipantProgress()).single;
+        expect(progress.paidAmount, 1000000);
+        expect(progress.remainingAmount, 1500000);
+
+        await qurbanRepository.addPayment(
+          QurbanPayment(
+            participantId: participant.id!,
+            amount: 1600000,
+            paymentDate: DateTime.now(),
+          ),
+        );
+        progress = (await qurbanRepository.getParticipantProgress()).single;
+        expect(progress.paidAmount, 2600000);
+        expect(progress.status, QurbanProgressStatus.overpaid);
+      },
+    );
+
+    test('Add payment creates linked qurban income transaction', () async {
+      await qurbanRepository.addParticipant(
+        QurbanParticipant(
+          name: 'Chandra',
+          startMonth: DateTime.now(),
+          monthlyAmount: 275000,
+        ),
+      );
+      final participant =
+          (await qurbanRepository.getParticipantProgress()).single.participant;
+
+      await qurbanRepository.addPayment(
+        QurbanPayment(
+          participantId: participant.id!,
+          amount: 275000,
+          paymentDate: DateTime.now(),
+          note: 'Bulan 1',
+        ),
+      );
+
+      final payment = (await qurbanRepository.getPaymentsForParticipant(
+        participant.id!,
+      )).single;
+      final transaction = await (db.select(
+        db.transactions,
+      )..where((t) => t.id.equals(payment.transactionId!))).getSingle();
+
+      expect(transaction.type, domain.TransactionType.income);
+      expect(transaction.category, 'Iuran Qurban');
+      expect(transaction.amount, 275000);
+      expect(transaction.source, domain.TransactionSource.qurban);
+      expect(transaction.sourceRef, payment.remoteId);
+    });
+
+    test(
+      'Update and delete payment keeps linked transaction consistent',
+      () async {
+        await qurbanRepository.addParticipant(
+          QurbanParticipant(
+            name: 'Dedi',
+            startMonth: DateTime.now(),
+            monthlyAmount: 250000,
+          ),
+        );
+        final participant = (await qurbanRepository.getParticipantProgress())
+            .single
+            .participant;
+
+        await qurbanRepository.addPayment(
+          QurbanPayment(
+            participantId: participant.id!,
+            amount: 250000,
+            paymentDate: DateTime.now(),
+          ),
+        );
+        final payment = (await qurbanRepository.getPaymentsForParticipant(
+          participant.id!,
+        )).single;
+
+        await qurbanRepository.updatePayment(
+          payment.copyWith(amount: 300000, note: 'Revisi'),
+        );
+
+        final updatedPayment =
+            (await qurbanRepository.getPaymentsForParticipant(
+              participant.id!,
+            )).single;
+        final transaction =
+            await (db.select(db.transactions)
+                  ..where((t) => t.id.equals(updatedPayment.transactionId!)))
+                .getSingle();
+
+        expect(updatedPayment.syncStatus, domain.SyncStatus.pendingCreate);
+        expect(transaction.syncStatus, domain.SyncStatus.pendingCreate);
+        expect(transaction.amount, 300000);
+
+        await qurbanRepository.deletePayment(updatedPayment.id!);
+
+        final remainingPayments = await qurbanRepository
+            .getPaymentsForParticipant(participant.id!);
+        final remainingTransaction =
+            await (db.select(db.transactions)
+                  ..where((t) => t.id.equals(updatedPayment.transactionId!)))
+                .getSingleOrNull();
+
+        expect(remainingPayments, isEmpty);
+        expect(remainingTransaction, isNull);
+      },
+    );
+
+    test('Update participant preserves pendingCreate status', () async {
+      await qurbanRepository.addParticipant(
+        QurbanParticipant(
+          name: 'Eko',
+          startMonth: DateTime.now(),
+          monthlyAmount: 250000,
+        ),
+      );
+      final participant =
+          (await qurbanRepository.getParticipantProgress()).single.participant;
+
+      await qurbanRepository.updateParticipant(
+        participant.copyWith(name: 'Eko Prasetyo'),
+      );
+
+      final row = await (db.select(
+        db.qurbanParticipants,
+      )..where((t) => t.id.equals(participant.id!))).getSingle();
+      expect(row.syncStatus, domain.SyncStatus.pendingCreate);
+      expect(row.name, 'Eko Prasetyo');
     });
   });
 }

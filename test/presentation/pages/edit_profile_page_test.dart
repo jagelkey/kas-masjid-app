@@ -320,7 +320,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Assert
-      expect(find.text('⚠️ Password akan diubah'), findsOneWidget);
+      expect(find.text('Password akan diubah'), findsOneWidget);
     });
 
     testWidgets('should show snackbar for no changes', (

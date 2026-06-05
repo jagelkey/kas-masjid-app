@@ -26,6 +26,17 @@ class _RegisterMosquePageState extends State<RegisterMosquePage> {
   bool _isSavingProfile = false;
 
   @override
+  void dispose() {
+    _mosqueNameController.dispose();
+    _mosqueAddressController.dispose();
+    _nameController.dispose();
+    _usernameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -140,8 +151,17 @@ class _RegisterMosquePageState extends State<RegisterMosquePage> {
                         'Username',
                         Icons.alternate_email_rounded,
                       ),
-                      validator: (value) =>
-                          value!.isEmpty ? 'Username wajib diisi' : null,
+                      validator: (value) {
+                        final username = value?.trim() ?? '';
+                        if (username.isEmpty) return 'Username wajib diisi';
+                        if (username.length < 3) {
+                          return 'Username minimal 3 karakter';
+                        }
+                        if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username)) {
+                          return 'Username hanya boleh huruf, angka, dan underscore';
+                        }
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -150,8 +170,16 @@ class _RegisterMosquePageState extends State<RegisterMosquePage> {
                         'Email',
                         Icons.email_outlined,
                       ),
-                      validator: (value) =>
-                          value!.isEmpty ? 'Email wajib diisi' : null,
+                      validator: (value) {
+                        final email = value?.trim() ?? '';
+                        if (email.isEmpty) return 'Email wajib diisi';
+                        if (!RegExp(
+                          r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                        ).hasMatch(email)) {
+                          return 'Format email tidak valid';
+                        }
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -174,8 +202,15 @@ class _RegisterMosquePageState extends State<RegisterMosquePage> {
                               ),
                             ),
                           ),
-                      validator: (value) =>
-                          value!.isEmpty ? 'Password wajib diisi' : null,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Password wajib diisi';
+                        }
+                        if (value.length < 6) {
+                          return 'Password minimal 6 karakter';
+                        }
+                        return null;
+                      },
                     ),
                   ],
                 ),
@@ -194,7 +229,7 @@ class _RegisterMosquePageState extends State<RegisterMosquePage> {
                               username: _usernameController.text,
                               email: _emailController.text,
                               password: _passwordController.text,
-                              // Default role is Admin in AuthBloc, which matches requirements
+                              role: UserRole.admin,
                             ),
                           );
                         }

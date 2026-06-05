@@ -89,16 +89,18 @@ class UserRepositoryImpl implements UserRepository {
     if (user == null) return;
 
     // Validate relations before deleting
-    final relatedLogs = await (_db.select(_db.auditLogs)
-          ..where((t) => t.userId.equals(user.remoteId ?? user.email)))
-        .get();
-        
-    final relatedActivities = await (_db.select(_db.activities)
-          ..where((t) => t.picName.equals(user.fullName ?? '')))
-        .get();
+    final relatedLogs = await (_db.select(
+      _db.auditLogs,
+    )..where((t) => t.userId.equals(user.remoteId ?? user.email))).get();
+
+    final relatedActivities = await (_db.select(
+      _db.activities,
+    )..where((t) => t.picName.equals(user.fullName ?? ''))).get();
 
     if (relatedLogs.isNotEmpty || relatedActivities.isNotEmpty) {
-      throw Exception('Tidak dapat menghapus user karena masih memiliki riwayat aktivitas atau transaksi.');
+      throw Exception(
+        'Tidak dapat menghapus user karena masih memiliki riwayat aktivitas atau transaksi.',
+      );
     }
 
     if (user.remoteId != null) {

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:masjid_app/core/theme/app_theme.dart';
 import 'package:masjid_app/core/di/injection.dart';
 import 'package:masjid_app/core/services/pdf_service.dart';
 import 'package:masjid_app/domain/entities/transaction.dart';
@@ -11,6 +12,7 @@ import 'package:masjid_app/presentation/blocs/profile/profile_bloc.dart';
 import 'package:masjid_app/presentation/blocs/transaction/transaction_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
+import 'package:masjid_app/presentation/widgets/app_components.dart';
 
 class TransactionListPage extends StatelessWidget {
   const TransactionListPage({super.key});
@@ -29,7 +31,7 @@ class TransactionListPage extends StatelessWidget {
                 final transactions = state.filteredTransactions;
 
                 // Determine period text
-                String period = 'Semua Transaksi';
+                final periodParts = <String>[];
                 if (state.filterDateRange != null) {
                   final start = DateFormat(
                     'dd MMM yyyy',
@@ -39,13 +41,22 @@ class TransactionListPage extends StatelessWidget {
                     'dd MMM yyyy',
                     'id',
                   ).format(state.filterDateRange!.end);
-                  period = '$start - $end';
-                } else if (state.filterType != null) {
-                  period =
-                      'Filter: ${state.filterType == TransactionType.income ? 'Pemasukan' : 'Pengeluaran'}';
-                } else if (state.filterCategory != null) {
-                  period = 'Kategori: ${state.filterCategory}';
+                  periodParts.add('$start - $end');
                 }
+                if (state.filterType != null) {
+                  periodParts.add(
+                    state.filterType == TransactionType.income
+                        ? 'Pemasukan'
+                        : 'Pengeluaran',
+                  );
+                }
+                if (state.filterCategory != null &&
+                    state.filterCategory!.isNotEmpty) {
+                  periodParts.add('Kategori: ${state.filterCategory}');
+                }
+                final period = periodParts.isEmpty
+                    ? 'Semua Transaksi'
+                    : periodParts.join(' | ');
 
                 // Calculate totals for the report based on the visible transactions
                 double totalIncome = 0;
@@ -92,75 +103,100 @@ class TransactionListPage extends StatelessWidget {
                 state.filteredTransactions; // Use filtered list
 
             if (transactions.isEmpty) {
-              return const Center(
-                child: Text('Belum ada transaksi (sesuai filter)'),
+              return const AppEmptyState(
+                icon: Icons.receipt_long_outlined,
+                title: 'Belum ada transaksi',
+                message: 'Coba ubah filter atau tambah transaksi kas baru.',
               );
             }
             return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
               itemCount: transactions.length,
-              separatorBuilder: (context, index) => const Divider(),
+              separatorBuilder: (context, index) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final transaction = transactions[index];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: transaction.type == TransactionType.income
-                        ? Colors.green.withValues(alpha: 0.1)
-                        : Colors.red.withValues(alpha: 0.1),
-                    child: Icon(
-                      transaction.type == TransactionType.income
-                          ? Icons.arrow_downward
-                          : Icons.arrow_upward,
-                      color: transaction.type == TransactionType.income
-                          ? Colors.green
-                          : Colors.red,
-                    ),
+                final isIncome = transaction.type == TransactionType.income;
+                final color = isIncome ? AppColors.primary : AppColors.danger;
+                return Material(
+                  color: AppColors.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                    side: const BorderSide(color: AppColors.line),
                   ),
-                  title: Text(transaction.category),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (transaction.description != null &&
-                          transaction.description!.isNotEmpty)
-                        Text(transaction.description!),
-                      Text(DateFormat('dd MMM yyyy').format(transaction.date)),
-                    ],
-                  ),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        NumberFormat.currency(
-                          locale: 'id',
-                          symbol: 'Rp ',
-                        ).format(transaction.amount),
-                        style: TextStyle(
-                          color: transaction.type == TransactionType.income
-                              ? Colors.green
-                              : Colors.red,
-                          fontWeight: FontWeight.bold,
-                        ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: color.withValues(alpha: 0.1),
+                      child: Icon(
+                        isIncome
+                            ? Icons.south_west_rounded
+                            : Icons.north_east_rounded,
+                        color: color,
                       ),
-                      if (transaction.syncStatus != SyncStatus.synced)
-                        const Icon(
-                          Icons.cloud_upload_outlined,
-                          size: 12,
-                          color: Colors.grey,
+                    ),
+                    title: Text(
+                      transaction.category,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (transaction.description != null &&
+                            transaction.description!.isNotEmpty)
+                          Text(
+                            transaction.description!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        if (transaction.source == TransactionSource.qurban)
+                          Text(
+                            'Dikelola dari menu Qurban',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppColors.teal),
+                          ),
+                        Text(
+                          DateFormat(
+                            'dd MMM yyyy',
+                            'id',
+                          ).format(transaction.date),
                         ),
-                    ],
-                  ),
-                  onTap: () {
-                    // Show details or edit
-                    final authState = context.read<AuthBloc>().state;
-                    bool canManage = false;
-                    if (authState is Authenticated) {
-                      canManage = authState.role.canManageTransactions;
-                    } else if (authState is AuthOffline) {
-                      canManage = authState.role.canManageTransactions;
-                    }
+                      ],
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          NumberFormat.compactCurrency(
+                            locale: 'id',
+                            symbol: 'Rp',
+                            decimalDigits: 0,
+                          ).format(transaction.amount),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelLarge?.copyWith(color: color),
+                        ),
+                        if (transaction.syncStatus != SyncStatus.synced)
+                          const Icon(
+                            Icons.cloud_upload_outlined,
+                            size: 14,
+                            color: AppColors.muted,
+                          ),
+                      ],
+                    ),
+                    onTap: () {
+                      // Show details or edit
+                      final authState = context.read<AuthBloc>().state;
+                      bool canManage = false;
+                      if (authState is Authenticated) {
+                        canManage = authState.role.canManageTransactions;
+                      } else if (authState is AuthOffline) {
+                        canManage = authState.role.canManageTransactions;
+                      }
 
-                    _showTransactionOptions(context, transaction, canManage);
-                  },
+                      _showTransactionOptions(context, transaction, canManage);
+                    },
+                  ),
                 );
               },
             );
@@ -179,11 +215,12 @@ class TransactionListPage extends StatelessWidget {
 
           if (!canAdd) return const SizedBox.shrink();
 
-          return FloatingActionButton(
+          return FloatingActionButton.extended(
             onPressed: () {
               context.push('/transactions/add');
             },
-            child: const Icon(Icons.add),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Tambah'),
           );
         },
       ),
@@ -204,6 +241,42 @@ class TransactionListPage extends StatelessWidget {
     Transaction transaction,
     bool canManage,
   ) {
+    if (transaction.source == TransactionSource.qurban) {
+      showModalBottomSheet(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: Wrap(
+            children: [
+              const ListTile(
+                leading: Icon(Icons.volunteer_activism),
+                title: Text('Transaksi Iuran Qurban'),
+                subtitle: Text('Edit dan hapus lewat detail peserta qurban'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.open_in_new),
+                title: const Text('Buka Menu Qurban'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.go('/qurban');
+                },
+              ),
+              if (transaction.proofUrls.isNotEmpty ||
+                  transaction.proofPaths.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.image, color: Colors.green),
+                  title: const Text('Lihat Bukti Transaksi'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showProofDialog(context, transaction);
+                  },
+                ),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -292,6 +365,8 @@ class _FilterDialog extends StatefulWidget {
 class _FilterDialogState extends State<_FilterDialog> {
   DateTimeRange? _selectedDateRange;
   TransactionType? _selectedType;
+  String? _selectedCategory;
+  List<String> _categories = const [];
 
   @override
   void initState() {
@@ -300,6 +375,9 @@ class _FilterDialogState extends State<_FilterDialog> {
     if (state is TransactionLoaded) {
       _selectedDateRange = state.filterDateRange;
       _selectedType = state.filterType;
+      _selectedCategory = state.filterCategory;
+      _categories = state.transactions.map((t) => t.category).toSet().toList()
+        ..sort();
     }
   }
 
@@ -353,13 +431,31 @@ class _FilterDialogState extends State<_FilterDialog> {
               });
             },
           ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            decoration: const InputDecoration(labelText: 'Kategori'),
+            key: ValueKey(_selectedCategory),
+            initialValue: _selectedCategory,
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Semua')),
+              ..._categories.map(
+                (category) =>
+                    DropdownMenuItem(value: category, child: Text(category)),
+              ),
+            ],
+            onChanged: (val) {
+              setState(() {
+                _selectedCategory = val;
+              });
+            },
+          ),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () {
             // Reset filters
-            context.read<TransactionBloc>().add(
+            widget.bloc.add(
               const ApplyFilterEvent(
                 dateRange: null,
                 type: null,
@@ -376,12 +472,11 @@ class _FilterDialogState extends State<_FilterDialog> {
         ),
         ElevatedButton(
           onPressed: () {
-            context.read<TransactionBloc>().add(
+            widget.bloc.add(
               ApplyFilterEvent(
                 dateRange: _selectedDateRange,
                 type: _selectedType,
-                category:
-                    null, // Assuming category filter is not in this simple dialog yet or handled separately
+                category: _selectedCategory,
               ),
             );
             Navigator.pop(context);

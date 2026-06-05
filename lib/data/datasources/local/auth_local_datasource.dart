@@ -25,6 +25,7 @@ class AuthLocalDatasource {
   static const _keyUserMetadata = 'auth_user_metadata';
   static const _keyUsernameToEmail = 'auth_username_to_email';
   static const _keyPendingPassword = 'auth_pending_password';
+  static const _keyOnlinePassword = 'auth_online_password';
 
   // Helper to generate unique key for each user
   String _getUserKey(String identifier, String key) => '${key}_$identifier';
@@ -114,6 +115,7 @@ class AuthLocalDatasource {
         key: _getUserKey(normalizedEmail, _keyPasswordHash),
         value: hash,
       );
+      await saveOnlinePassword(email: normalizedEmail, password: newPassword);
     } else if (newEmail != null && normalizedEmail != normalizedCurrentEmail) {
       // Copy old hash to new key
       final oldHash = await _storage.read(
@@ -123,6 +125,14 @@ class AuthLocalDatasource {
         await _storage.write(
           key: _getUserKey(normalizedEmail, _keyPasswordHash),
           value: oldHash,
+        );
+      }
+
+      final oldOnlinePassword = await getOnlinePassword(normalizedCurrentEmail);
+      if (oldOnlinePassword != null) {
+        await saveOnlinePassword(
+          email: normalizedEmail,
+          password: oldOnlinePassword,
         );
       }
     }
@@ -167,6 +177,7 @@ class AuthLocalDatasource {
       await _storage.delete(
         key: _getUserKey(normalizedCurrentEmail, _keyUserMetadata),
       );
+      await deleteOnlinePassword(normalizedCurrentEmail);
     }
 
     // 4. Handle Username Mapping
@@ -191,6 +202,28 @@ class AuthLocalDatasource {
     await _storage.write(
       key: _getUserKey(userId, _keyPendingPassword),
       value: password,
+    );
+  }
+
+  Future<void> saveOnlinePassword({
+    required String email,
+    required String password,
+  }) async {
+    await _storage.write(
+      key: _getUserKey(email.toLowerCase(), _keyOnlinePassword),
+      value: password,
+    );
+  }
+
+  Future<String?> getOnlinePassword(String email) async {
+    return _storage.read(
+      key: _getUserKey(email.toLowerCase(), _keyOnlinePassword),
+    );
+  }
+
+  Future<void> deleteOnlinePassword(String email) async {
+    await _storage.delete(
+      key: _getUserKey(email.toLowerCase(), _keyOnlinePassword),
     );
   }
 
@@ -229,7 +262,7 @@ class AuthLocalDatasource {
 
     final userId = await _storage.read(key: _getUserKey(email, _keyUserId));
     final salt = userId ?? email; // Fallback to email if userId is missing
-    
+
     final hmacSha256 = Hmac(sha256, utf8.encode(salt));
     final saltedHash = hmacSha256.convert(utf8.encode(password)).toString();
     final unsaltedHash = sha256.convert(utf8.encode(password)).toString();

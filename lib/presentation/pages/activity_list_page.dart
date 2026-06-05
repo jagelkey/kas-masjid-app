@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:masjid_app/core/theme/app_theme.dart';
 import 'package:masjid_app/domain/entities/activity.dart';
 import 'package:masjid_app/domain/entities/transaction.dart'; // For SyncStatus
 import 'package:masjid_app/presentation/blocs/activity/activity_bloc.dart';
 import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:masjid_app/presentation/widgets/app_components.dart';
 
 class ActivityListPage extends StatelessWidget {
   const ActivityListPage({super.key});
@@ -21,11 +23,16 @@ class ActivityListPage extends StatelessWidget {
           }
           if (state is ActivityLoaded) {
             if (state.activities.isEmpty) {
-              return const Center(child: Text('Belum ada kegiatan'));
+              return const AppEmptyState(
+                icon: Icons.event_note_outlined,
+                title: 'Belum ada kegiatan',
+                message: 'Tambahkan jadwal untuk mulai mengatur agenda masjid.',
+              );
             }
             return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
               itemCount: state.activities.length,
-              separatorBuilder: (context, index) => const Divider(),
+              separatorBuilder: (context, index) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final activity = state.activities[index];
                 return BlocBuilder<AuthBloc, AuthState>(
@@ -37,39 +44,55 @@ class ActivityListPage extends StatelessWidget {
                       canManage = authState.role.canManageActivities;
                     }
 
-                    return ListTile(
-                      leading: CircleAvatar(
-                        child: Text(activity.date.day.toString()),
+                    return Material(
+                      color: AppColors.surface,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.md),
+                        side: const BorderSide(color: AppColors.line),
                       ),
-                      title: Text(activity.title),
-                      subtitle: Text(
-                        '${DateFormat('EEEE, dd MMM yyyy HH:mm', 'id').format(activity.date)}\n${activity.picName ?? '-'}',
-                      ),
-                      isThreeLine: true,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (activity.syncStatus != SyncStatus.synced)
-                            const Padding(
-                              padding: EdgeInsets.only(right: 8.0),
-                              child: Icon(
-                                Icons.cloud_upload_outlined,
-                                size: 16,
-                                color: Colors.grey,
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppColors.tealSoft,
+                          foregroundColor: AppColors.teal,
+                          child: Text(
+                            activity.date.day.toString(),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        title: Text(
+                          activity.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${DateFormat('EEEE, dd MMM yyyy HH:mm', 'id').format(activity.date)}\n${activity.picName ?? '-'}',
+                        ),
+                        isThreeLine: true,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (activity.syncStatus != SyncStatus.synced)
+                              const Padding(
+                                padding: EdgeInsets.only(right: 8.0),
+                                child: Icon(
+                                  Icons.cloud_upload_outlined,
+                                  size: 16,
+                                  color: AppColors.muted,
+                                ),
                               ),
-                            ),
-                          if (canManage)
-                            IconButton(
-                              icon: const Icon(Icons.more_vert),
-                              onPressed: () {
-                                _showActivityOptions(context, activity);
-                              },
-                            ),
-                        ],
+                            if (canManage)
+                              IconButton(
+                                icon: const Icon(Icons.more_vert_rounded),
+                                onPressed: () {
+                                  _showActivityOptions(context, activity);
+                                },
+                              ),
+                          ],
+                        ),
+                        onTap: () {
+                          _showActivityDetails(context, activity);
+                        },
                       ),
-                      onTap: () {
-                        _showActivityDetails(context, activity);
-                      },
                     );
                   },
                 );
@@ -90,11 +113,12 @@ class ActivityListPage extends StatelessWidget {
 
           if (!canAdd) return const SizedBox.shrink();
 
-          return FloatingActionButton(
+          return FloatingActionButton.extended(
             onPressed: () {
               context.push('/activities/add');
             },
-            child: const Icon(Icons.add),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Kegiatan'),
           );
         },
       ),

@@ -2,25 +2,23 @@ class Env {
   // Ganti dengan URL dan Anon Key dari Project Supabase Anda
   // Bisa didapatkan di: Supabase Dashboard -> Project Settings -> API
 
-  // Opsi 1: Hardcode di sini (Mudah tapi kurang aman jika code dishare)
+  // Konfigurasi produksi wajib diberikan lewat --dart-define.
   static const String supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://your-project-url.supabase.co',
+    defaultValue: '',
   );
 
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue:
-        'your-supabase-jwt',
+    defaultValue: '',
   );
 
   static bool get hasValidConfig =>
+      supabaseUrl.isNotEmpty &&
       supabaseUrl != 'https://your-project-url.supabase.co' &&
+      supabaseAnonKey.isNotEmpty &&
       supabaseAnonKey != 'your-anon-key';
 
-  static const String supabaseServiceRoleKey = String.fromEnvironment(
-    'SUPABASE_SERVICE_ROLE_KEY',
-    defaultValue:
-        'your-supabase-jwt',
-  );
+  // Service role key tidak boleh berada di aplikasi client.
+  // Operasi admin harus lewat backend/Edge Function.
 }

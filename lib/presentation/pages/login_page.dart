@@ -3,8 +3,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
+import 'package:masjid_app/core/theme/app_theme.dart';
 import 'package:masjid_app/domain/repositories/mosque_profile_repository.dart';
 import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart';
+import 'package:masjid_app/presentation/widgets/app_components.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -28,8 +30,14 @@ class _LoginPageState extends State<LoginPage> {
     _checkMosqueRegistration();
   }
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _checkMosqueRegistration() async {
-    // 1. Cek Lokal (Repository)
     try {
       final repository = GetIt.I<MosqueProfileRepository>();
       final profile = await repository.getProfile();
@@ -37,14 +45,12 @@ class _LoginPageState extends State<LoginPage> {
         setState(() {
           _isMosqueRegistered = true;
         });
-        return; // Jika lokal ada, tidak perlu cek remote
+        return;
       }
     } catch (e) {
       debugPrint('Error checking local mosque registration: $e');
     }
 
-    // 2. Cek Remote (Supabase)
-    // Hanya bisa diakses jika user punya internet dan RLS 'mosque_profiles' mengizinkan public read
     try {
       final supabase = Supabase.instance.client;
       final response = await supabase
@@ -64,7 +70,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _launchSocialMedia(String urlString) async {
-    final Uri url = Uri.parse(urlString);
+    final url = Uri.parse(urlString);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -78,10 +84,38 @@ class _LoginPageState extends State<LoginPage> {
     await _launchSocialMedia('https://wa.me/6282187179981');
   }
 
+  Future<void> _requestPasswordReset() async {
+    final identifier = _emailController.text.trim();
+    if (identifier.isEmpty || !identifier.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Masukkan email akun terlebih dahulu')),
+      );
+      return;
+    }
+
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(identifier);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Link reset password telah dikirim ke email'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Reset password membutuhkan koneksi online: $e'),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) {
           if (state is Authenticated || state is AuthOffline) {
@@ -92,230 +126,207 @@ class _LoginPageState extends State<LoginPage> {
             ).showSnackBar(SnackBar(content: Text(state.message)));
           }
         },
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.mosque,
-                    size: 64,
-                    color: Colors.green,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Masjid App',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Kelola Kas & Jadwal Masjid dengan Mudah',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 32),
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  color: Colors.white,
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Masuk ke Akun',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          TextFormField(
-                            controller: _emailController,
-                            decoration: InputDecoration(
-                              labelText: 'Email atau Username',
-                              prefixIcon: const Icon(
-                                Icons.alternate_email_rounded,
-                                size: 20,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey[50],
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 16,
-                              ),
-                            ),
-                            keyboardType: TextInputType.text,
-                            validator: (value) => value!.isEmpty
-                                ? 'Email/Username wajib diisi'
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _passwordController,
-                            obscureText: !_isPasswordVisible,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: const Icon(
-                                Icons.lock_outline_rounded,
-                                size: 20,
-                              ),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _isPasswordVisible
-                                      ? Icons.visibility_rounded
-                                      : Icons.visibility_off_rounded,
-                                  size: 20,
-                                ),
-                                onPressed: () => setState(
-                                  () =>
-                                      _isPasswordVisible = !_isPasswordVisible,
-                                ),
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey[50],
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 16,
-                              ),
-                            ),
-                            validator: (value) =>
-                                value!.isEmpty ? 'Password wajib diisi' : null,
-                          ),
-                          const SizedBox(height: 24),
-                          BlocBuilder<AuthBloc, AuthState>(
-                            builder: (context, state) {
-                              if (state is AuthLoading) {
-                                return const Center(
-                                  child: CircularProgressIndicator(),
-                                );
-                              }
-                              return FilledButton(
-                                onPressed: () {
-                                  if (_formKey.currentState!.validate()) {
-                                    context.read<AuthBloc>().add(
-                                      LoginRequested(
-                                        _emailController.text,
-                                        _passwordController.text,
-                                      ),
-                                    );
-                                  }
-                                },
-                                style: FilledButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Login',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                if (!_isMosqueRegistered) ...[
-                  Text(
-                    'Belum memiliki akun?',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      context.push('/register-mosque');
-                    },
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.green,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    child: const Text('Daftarkan Masjid Baru'),
-                  ),
-                ],
-                const SizedBox(height: 48),
-                const Text(
-                  'Dibuat oleh ZeFa Aplikasi',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    IconButton(
-                      onPressed: _launchWhatsApp,
-                      icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 28),
-                      color: Colors.green,
-                      tooltip: 'WhatsApp',
-                    ),
-                    const SizedBox(width: 16),
-                    IconButton(
-                      onPressed: () => _launchSocialMedia(
-                        'https://www.tiktok.com/@stmasyithah_?_r=1&_t=ZS-93jticGXkpt',
+                    const SizedBox(height: 12),
+                    _buildBrandHeader(context),
+                    const SizedBox(height: 28),
+                    _buildLoginForm(context),
+                    if (!_isMosqueRegistered) ...[
+                      const SizedBox(height: 18),
+                      OutlinedButton.icon(
+                        onPressed: () => context.push('/register-mosque'),
+                        icon: const Icon(Icons.add_business_rounded),
+                        label: const Text('Daftarkan Masjid Baru'),
                       ),
-                      icon: const FaIcon(FontAwesomeIcons.tiktok, size: 24),
-                      color: Colors.black,
-                      tooltip: 'TikTok',
-                    ),
-                    const SizedBox(width: 16),
-                    IconButton(
-                      onPressed: () => _launchSocialMedia(
-                        'https://www.instagram.com/rian_aselritz?igsh=MTh5ZG9taW5iNWc5cg==',
-                      ),
-                      icon: const FaIcon(FontAwesomeIcons.instagram, size: 28),
-                      color: Colors.purple,
-                      tooltip: 'Instagram',
-                    ),
+                    ],
+                    const SizedBox(height: 28),
+                    _buildFooter(context),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildBrandHeader(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 76,
+          height: 76,
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(AppRadii.lg),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: const Icon(
+            Icons.mosque_rounded,
+            size: 42,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Masjid App',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Kelola kas, kegiatan, dan iuran qurban dalam satu tempat.',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppColors.muted),
+        ),
+        const SizedBox(height: 14),
+        const AppStatusPill(
+          label: 'OFFLINE-FIRST',
+          icon: Icons.cloud_done_outlined,
+          color: AppColors.teal,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoginForm(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Masuk ke Akun',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 20),
+            TextFormField(
+              controller: _emailController,
+              decoration: const InputDecoration(
+                labelText: 'Email atau Username',
+                prefixIcon: Icon(Icons.alternate_email_rounded, size: 20),
+              ),
+              keyboardType: TextInputType.text,
+              validator: (value) =>
+                  value!.isEmpty ? 'Email/Username wajib diisi' : null,
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _passwordController,
+              obscureText: !_isPasswordVisible,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _isPasswordVisible
+                        ? Icons.visibility_rounded
+                        : Icons.visibility_off_rounded,
+                    size: 20,
+                  ),
+                  onPressed: () =>
+                      setState(() => _isPasswordVisible = !_isPasswordVisible),
+                ),
+              ),
+              validator: (value) =>
+                  value!.isEmpty ? 'Password wajib diisi' : null,
+            ),
+            const SizedBox(height: 20),
+            BlocBuilder<AuthBloc, AuthState>(
+              builder: (context, state) {
+                if (state is AuthLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return FilledButton.icon(
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+                      context.read<AuthBloc>().add(
+                        LoginRequested(
+                          _emailController.text,
+                          _passwordController.text,
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.login_rounded),
+                  label: const Text('Login'),
+                );
+              },
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _requestPasswordReset,
+                child: const Text('Lupa Password?'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          'Dibuat oleh ZeFa Aplikasi',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              onPressed: _launchWhatsApp,
+              icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 26),
+              color: AppColors.primary,
+              tooltip: 'WhatsApp',
+            ),
+            const SizedBox(width: 12),
+            IconButton(
+              onPressed: () => _launchSocialMedia(
+                'https://www.tiktok.com/@stmasyithah_?_r=1&_t=ZS-93jticGXkpt',
+              ),
+              icon: const FaIcon(FontAwesomeIcons.tiktok, size: 22),
+              color: AppColors.ink,
+              tooltip: 'TikTok',
+            ),
+            const SizedBox(width: 12),
+            IconButton(
+              onPressed: () => _launchSocialMedia(
+                'https://www.instagram.com/rian_aselritz?igsh=MTh5ZG9taW5iNWc5cg==',
+              ),
+              icon: const FaIcon(FontAwesomeIcons.instagram, size: 26),
+              color: const Color(0xFFE1306C),
+              tooltip: 'Instagram',
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

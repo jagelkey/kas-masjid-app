@@ -17,8 +17,14 @@ import 'package:masjid_app/presentation/pages/activity_list_page.dart';
 import 'package:masjid_app/presentation/pages/activity_form_page.dart';
 
 import 'package:masjid_app/presentation/pages/settings_page.dart';
+import 'package:masjid_app/presentation/pages/sync_center_page.dart';
 import 'package:masjid_app/presentation/pages/audit_log_page.dart';
 import 'package:masjid_app/presentation/pages/edit_profile_page.dart';
+import 'package:masjid_app/domain/entities/qurban.dart';
+import 'package:masjid_app/presentation/pages/qurban_page.dart';
+import 'package:masjid_app/presentation/pages/qurban_package_settings_page.dart';
+import 'package:masjid_app/presentation/pages/qurban_participant_form_page.dart';
+import 'package:masjid_app/presentation/pages/qurban_payment_form_page.dart';
 
 class GlobalAuthNotifier extends ChangeNotifier {
   bool _isOffline = false;
@@ -155,6 +161,58 @@ final appRouter = GoRouter(
           ],
         ),
         GoRoute(
+          path: '/qurban',
+          name: 'qurban',
+          builder: (context, state) => const QurbanPage(),
+          routes: [
+            GoRoute(
+              path: 'packages',
+              parentNavigatorKey: _rootNavigatorKey,
+              builder: (context, state) => const QurbanPackageSettingsPage(),
+            ),
+            GoRoute(
+              path: 'participant/add',
+              parentNavigatorKey: _rootNavigatorKey,
+              builder: (context, state) => const QurbanParticipantFormPage(),
+            ),
+            GoRoute(
+              path: 'participant/edit',
+              parentNavigatorKey: _rootNavigatorKey,
+              builder: (context, state) {
+                final participant = state.extra as QurbanParticipant;
+                return QurbanParticipantFormPage(participant: participant);
+              },
+            ),
+            GoRoute(
+              path: 'participant/detail',
+              parentNavigatorKey: _rootNavigatorKey,
+              builder: (context, state) {
+                final progress = state.extra as QurbanParticipantProgress;
+                return QurbanParticipantDetailPage(progress: progress);
+              },
+            ),
+            GoRoute(
+              path: 'payment/add',
+              parentNavigatorKey: _rootNavigatorKey,
+              builder: (context, state) {
+                final participant = state.extra as QurbanParticipant;
+                return QurbanPaymentFormPage(participant: participant);
+              },
+            ),
+            GoRoute(
+              path: 'payment/edit',
+              parentNavigatorKey: _rootNavigatorKey,
+              builder: (context, state) {
+                final args = state.extra as QurbanPaymentFormArgs;
+                return QurbanPaymentFormPage(
+                  participant: args.participant,
+                  payment: args.payment,
+                );
+              },
+            ),
+          ],
+        ),
+        GoRoute(
           path: '/settings',
           name: 'settings',
           builder: (context, state) => const SettingsPage(),
@@ -173,6 +231,11 @@ final appRouter = GoRouter(
               path: 'audit-logs',
               parentNavigatorKey: _rootNavigatorKey,
               builder: (context, state) => const AuditLogPage(),
+            ),
+            GoRoute(
+              path: 'sync',
+              parentNavigatorKey: _rootNavigatorKey,
+              builder: (context, state) => const SyncCenterPage(),
             ),
           ],
         ),

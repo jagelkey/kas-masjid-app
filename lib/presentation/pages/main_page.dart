@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:masjid_app/core/theme/app_theme.dart';
 import 'package:masjid_app/presentation/blocs/sync/sync_cubit.dart';
 
 class MainPage extends StatefulWidget {
@@ -12,50 +13,65 @@ class MainPage extends StatefulWidget {
 }
 
 class _MainPageState extends State<MainPage> {
-
   @override
   Widget build(BuildContext context) {
     return BlocListener<SyncCubit, SyncState>(
       listener: (context, state) {
-        if (!state.isSyncing && !state.isSuccess) {
+        if (!state.isSyncing &&
+            !state.isSuccess &&
+            state.errorMessages.isNotEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Sync Gagal: ${state.errorMessages.join(", ")}'),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
+              content: Text('Sinkronisasi gagal: ${state.errorMessages.first}'),
+              backgroundColor: AppColors.danger,
+              action: SnackBarAction(
+                label: 'Tutup',
+                textColor: Colors.white,
+                onPressed: () => context.read<SyncCubit>().clearError(),
+              ),
             ),
           );
         }
       },
       child: Scaffold(
         body: widget.child,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _calculateSelectedIndex(context),
-          onDestinationSelected: (index) {
-            _onItemTapped(index, context);
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard),
-              label: 'Dashboard',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.account_balance_wallet_outlined),
-              selectedIcon: Icon(Icons.account_balance_wallet),
-              label: 'Kas',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined),
-              selectedIcon: Icon(Icons.calendar_today),
-              label: 'Kegiatan',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: 'Pengaturan',
-            ),
-          ],
+        bottomNavigationBar: DecoratedBox(
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: AppColors.line)),
+          ),
+          child: NavigationBar(
+            selectedIndex: _calculateSelectedIndex(context),
+            onDestinationSelected: (index) {
+              _onItemTapped(index, context);
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.space_dashboard_outlined),
+                selectedIcon: Icon(Icons.space_dashboard_rounded),
+                label: 'Dashboard',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.account_balance_wallet_outlined),
+                selectedIcon: Icon(Icons.account_balance_wallet_rounded),
+                label: 'Kas',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.event_note_outlined),
+                selectedIcon: Icon(Icons.event_note_rounded),
+                label: 'Kegiatan',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.volunteer_activism_outlined),
+                selectedIcon: Icon(Icons.volunteer_activism_rounded),
+                label: 'Qurban',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.tune_outlined),
+                selectedIcon: Icon(Icons.tune_rounded),
+                label: 'Pengaturan',
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -69,8 +85,11 @@ class _MainPageState extends State<MainPage> {
     if (location.startsWith('/activities')) {
       return 2;
     }
-    if (location.startsWith('/settings')) {
+    if (location.startsWith('/qurban')) {
       return 3;
+    }
+    if (location.startsWith('/settings')) {
+      return 4;
     }
     return 0;
   }
@@ -87,6 +106,9 @@ class _MainPageState extends State<MainPage> {
         context.go('/activities');
         break;
       case 3:
+        context.go('/qurban');
+        break;
+      case 4:
         context.go('/settings');
         break;
     }
