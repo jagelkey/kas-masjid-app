@@ -94,3 +94,16 @@ flutter test test/full_integration_test.dart \
 
 Kalau hanya pasangan `TEST_*` yang diberikan, test akan **dilewati dengan pesan
 jelas** (bukan gagal membingungkan di tengah jalan).
+
+### Audit integrasi backend menyeluruh
+
+`test/full_backend_integration_test.dart` membuktikan **setiap entitas**
+(transaksi, kegiatan, paket/peserta/pembayaran Qurban, profil masjid, bukti foto
+di Storage, audit log) benar-benar round-trip: dibuat lewat repository asli →
+push → terverifikasi di server → ditarik ulang di "device" kedua. Jalankan dengan
+enam `--dart-define` yang sama seperti di atas, hanya ganti nama file test-nya.
+Test ini membuat baris ber-marker unik dan menghapusnya sendiri; ia tidak pernah
+mengubah data asli (profil masjid diuji dengan update nilai-sama). Satu-satunya
+sisa yang mungkin tertinggal adalah beberapa baris `audit_logs` — tabel itu
+sengaja append-only (tanpa policy DELETE), jadi bersihkan lewat akses DB bila
+perlu: `delete from audit_logs where description like '%BACKEND_AUDIT_%';`.
