@@ -120,7 +120,8 @@ class QurbanPackageSettingsPage extends StatelessWidget {
                   final amount = double.tryParse(amountController.text);
                   if (nameController.text.trim().isEmpty ||
                       amount == null ||
-                      amount <= 0) {
+                      amount <= 0 ||
+                      amount > 50000000) {
                     return;
                   }
 

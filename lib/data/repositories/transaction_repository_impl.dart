@@ -60,30 +60,35 @@ class TransactionRepositoryImpl implements TransactionRepository {
 
   @override
   Future<void> addTransaction(domain.Transaction transaction) async {
-    await _db
-        .into(_db.transactions)
-        .insert(
-          TransactionsCompanion(
-            remoteId: Value(transaction.remoteId),
-            type: Value(transaction.type),
-            amount: Value(transaction.amount),
-            category: Value(transaction.category),
-            description: Value(transaction.description),
-            date: Value(transaction.date),
-            proofPaths: Value(transaction.proofPaths),
-            proofUrls: Value(transaction.proofUrls),
-            source: Value(transaction.source),
-            sourceRef: Value(transaction.sourceRef),
-            syncStatus: Value(domain.SyncStatus.pendingCreate),
-          ),
-        );
+    // Wrapped in a transaction so the audit trail entry can never be lost
+    // (or the write silently un-recorded) if the app is killed between the
+    // two statements.
+    await _db.transaction(() async {
+      await _db
+          .into(_db.transactions)
+          .insert(
+            TransactionsCompanion(
+              remoteId: Value(transaction.remoteId),
+              type: Value(transaction.type),
+              amount: Value(transaction.amount),
+              category: Value(transaction.category),
+              description: Value(transaction.description),
+              date: Value(transaction.date),
+              proofPaths: Value(transaction.proofPaths),
+              proofUrls: Value(transaction.proofUrls),
+              source: Value(transaction.source),
+              sourceRef: Value(transaction.sourceRef),
+              syncStatus: Value(domain.SyncStatus.pendingCreate),
+            ),
+          );
 
-    await _auditLogRepository.logActivity(
-      action: 'CREATE',
-      targetTable: 'transactions',
-      description:
-          'Transaction: ${transaction.category} - ${transaction.amount}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'CREATE',
+        targetTable: 'transactions',
+        description:
+            'Transaction: ${transaction.category} - ${transaction.amount}',
+      );
+    });
   }
 
   @override
@@ -106,31 +111,33 @@ class TransactionRepositoryImpl implements TransactionRepository {
         ? domain.SyncStatus.pendingCreate
         : domain.SyncStatus.pendingUpdate;
 
-    await (_db.update(
-      _db.transactions,
-    )..where((t) => t.id.equals(transaction.id!))).write(
-      TransactionsCompanion(
-        type: Value(transaction.type),
-        amount: Value(transaction.amount),
-        category: Value(transaction.category),
-        description: Value(transaction.description),
-        date: Value(transaction.date),
-        proofPaths: Value(transaction.proofPaths),
-        proofUrls: Value(transaction.proofUrls),
-        source: Value(transaction.source),
-        sourceRef: Value(transaction.sourceRef),
-        syncStatus: Value(newSyncStatus),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
+    await _db.transaction(() async {
+      await (_db.update(
+        _db.transactions,
+      )..where((t) => t.id.equals(transaction.id!))).write(
+        TransactionsCompanion(
+          type: Value(transaction.type),
+          amount: Value(transaction.amount),
+          category: Value(transaction.category),
+          description: Value(transaction.description),
+          date: Value(transaction.date),
+          proofPaths: Value(transaction.proofPaths),
+          proofUrls: Value(transaction.proofUrls),
+          source: Value(transaction.source),
+          sourceRef: Value(transaction.sourceRef),
+          syncStatus: Value(newSyncStatus),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
 
-    await _auditLogRepository.logActivity(
-      action: 'UPDATE',
-      targetTable: 'transactions',
-      recordId: transaction.id.toString(),
-      description:
-          'Updated Transaction: ${transaction.category} - ${transaction.amount}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'UPDATE',
+        targetTable: 'transactions',
+        recordId: transaction.id.toString(),
+        description:
+            'Updated Transaction: ${transaction.category} - ${transaction.amount}',
+      );
+    });
   }
 
   @override
@@ -148,33 +155,46 @@ class TransactionRepositoryImpl implements TransactionRepository {
       );
     }
 
-    if (transaction.remoteId != null) {
-      // Mark for deletion on server
-      await (_db.update(_db.transactions)..where((t) => t.id.equals(id))).write(
-        TransactionsCompanion(
-          syncStatus: Value(domain.SyncStatus.pendingDelete),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
-    } else {
-      // Local only, safe to delete
-      await (_db.delete(_db.transactions)..where((t) => t.id.equals(id))).go();
-    }
+    await _db.transaction(() async {
+      if (transaction.remoteId != null) {
+        // Mark for deletion on server
+        await (_db.update(
+          _db.transactions,
+        )..where((t) => t.id.equals(id))).write(
+          TransactionsCompanion(
+            syncStatus: Value(domain.SyncStatus.pendingDelete),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      } else {
+        // Local only, safe to delete
+        await (_db.delete(
+          _db.transactions,
+        )..where((t) => t.id.equals(id))).go();
+      }
 
-    await _auditLogRepository.logActivity(
-      action: 'DELETE',
-      targetTable: 'transactions',
-      recordId: id.toString(),
-      description:
-          'Deleted Transaction: ${transaction.category} - ${transaction.amount}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'DELETE',
+        targetTable: 'transactions',
+        recordId: id.toString(),
+        description:
+            'Deleted Transaction: ${transaction.category} - ${transaction.amount}',
+      );
+    });
   }
 
   @override
   Future<double> getTotalBalance() async {
+    // Cap at "now": the entry form no longer allows future dates, but this
+    // guards existing data (from before that fix, or synced from another
+    // client) from inflating/deflating today's balance with money that
+    // technically hasn't moved yet.
+    final now = DateTime.now();
+
     final incomeQuery = _db.selectOnly(_db.transactions)
       ..addColumns([_db.transactions.amount.sum()])
       ..where(_db.transactions.type.equalsValue(domain.TransactionType.income))
+      ..where(_db.transactions.date.isSmallerOrEqualValue(now))
       ..where(
         _db.transactions.syncStatus.isNotValue(
           domain.SyncStatus.pendingDelete.index,
@@ -184,6 +204,7 @@ class TransactionRepositoryImpl implements TransactionRepository {
     final expenseQuery = _db.selectOnly(_db.transactions)
       ..addColumns([_db.transactions.amount.sum()])
       ..where(_db.transactions.type.equalsValue(domain.TransactionType.expense))
+      ..where(_db.transactions.date.isSmallerOrEqualValue(now))
       ..where(
         _db.transactions.syncStatus.isNotValue(
           domain.SyncStatus.pendingDelete.index,
@@ -204,16 +225,13 @@ class TransactionRepositoryImpl implements TransactionRepository {
   Future<double> getIncomeThisMonth() async {
     final now = DateTime.now();
     final startOfMonth = DateTime(now.year, now.month, 1);
-    // Move to first day of next month and subtract 1 second to get the very end of current month
-    final endOfMonth = DateTime(
-      now.year,
-      now.month + 1,
-      1,
-    ).subtract(const Duration(seconds: 1));
+    // Upper bound is "now", not the end of the month: "this month's income
+    // so far" shouldn't include transactions dated later this month that
+    // haven't happened yet.
 
     final query = _db.select(_db.transactions)
       ..where((t) => t.type.equalsValue(domain.TransactionType.income))
-      ..where((t) => t.date.isBetweenValues(startOfMonth, endOfMonth))
+      ..where((t) => t.date.isBetweenValues(startOfMonth, now))
       ..where(
         (t) => t.syncStatus.isNotValue(domain.SyncStatus.pendingDelete.index),
       );
@@ -226,15 +244,11 @@ class TransactionRepositoryImpl implements TransactionRepository {
   Future<double> getExpenseThisMonth() async {
     final now = DateTime.now();
     final startOfMonth = DateTime(now.year, now.month, 1);
-    final endOfMonth = DateTime(
-      now.year,
-      now.month + 1,
-      1,
-    ).subtract(const Duration(seconds: 1));
+    // Upper bound is "now", not the end of the month -- see getIncomeThisMonth.
 
     final query = _db.select(_db.transactions)
       ..where((t) => t.type.equalsValue(domain.TransactionType.expense))
-      ..where((t) => t.date.isBetweenValues(startOfMonth, endOfMonth))
+      ..where((t) => t.date.isBetweenValues(startOfMonth, now))
       ..where(
         (t) => t.syncStatus.isNotValue(domain.SyncStatus.pendingDelete.index),
       );

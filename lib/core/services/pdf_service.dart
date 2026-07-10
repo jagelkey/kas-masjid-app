@@ -165,7 +165,10 @@ class PdfService {
       children: [
         _buildSummaryItem('Total Pemasukan', income, PdfColors.green),
         _buildSummaryItem('Total Pengeluaran', expense, PdfColors.red),
-        _buildSummaryItem('Saldo Bulan Ini', income - expense, PdfColors.blue),
+        // "Periode Ini", not "Bulan Ini": generateReport() receives the totals
+        // of whatever the user filtered, which is frequently all-time or a
+        // custom range. The numbers were right; the label lied.
+        _buildSummaryItem('Saldo Periode Ini', income - expense, PdfColors.blue),
       ],
     );
   }
@@ -293,7 +296,8 @@ class PdfService {
     for (final item in progress) {
       final payments = [...item.payments]
         ..sort((a, b) => b.paymentDate.compareTo(a.paymentDate));
-      for (final payment in payments.take(5)) {
+      final shown = payments.take(5).toList();
+      for (final payment in shown) {
         rows.add([
           DateFormat('dd/MM/yy').format(payment.paymentDate),
           item.participant.name,
@@ -303,6 +307,18 @@ class PdfService {
             decimalDigits: 0,
           ).format(payment.amount),
           payment.note ?? '',
+        ]);
+      }
+      // This table is scoped to the 5 most recent payments per participant
+      // (see title below) -- make the cutoff visible instead of silently
+      // dropping older history, so a reader doesn't mistake it for complete.
+      final omitted = payments.length - shown.length;
+      if (omitted > 0) {
+        rows.add([
+          '',
+          item.participant.name,
+          '',
+          '+$omitted pembayaran lainnya tidak ditampilkan',
         ]);
       }
     }

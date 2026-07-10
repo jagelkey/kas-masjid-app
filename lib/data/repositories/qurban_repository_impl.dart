@@ -153,22 +153,24 @@ class QurbanRepositoryImpl implements QurbanRepository {
   @override
   Future<void> addPackage(QurbanPackage package) async {
     final remoteId = package.remoteId ?? _uuid.v4();
-    await _db
-        .into(_db.qurbanPackages)
-        .insert(
-          QurbanPackagesCompanion.insert(
-            remoteId: Value(remoteId),
-            name: package.name.trim(),
-            monthlyAmount: package.monthlyAmount,
-            isActive: Value(package.isActive),
-            syncStatus: const Value(tx_domain.SyncStatus.pendingCreate),
-          ),
-        );
-    await _auditLogRepository.logActivity(
-      action: 'CREATE',
-      targetTable: 'qurban_packages',
-      description: 'Paket qurban: ${package.name}',
-    );
+    await _db.transaction(() async {
+      await _db
+          .into(_db.qurbanPackages)
+          .insert(
+            QurbanPackagesCompanion.insert(
+              remoteId: Value(remoteId),
+              name: package.name.trim(),
+              monthlyAmount: package.monthlyAmount,
+              isActive: Value(package.isActive),
+              syncStatus: const Value(tx_domain.SyncStatus.pendingCreate),
+            ),
+          );
+      await _auditLogRepository.logActivity(
+        action: 'CREATE',
+        targetTable: 'qurban_packages',
+        description: 'Paket qurban: ${package.name}',
+      );
+    });
   }
 
   @override
@@ -179,23 +181,25 @@ class QurbanRepositoryImpl implements QurbanRepository {
     )..where((t) => t.id.equals(package.id!))).getSingleOrNull();
     if (existing == null) return;
 
-    await (_db.update(
-      _db.qurbanPackages,
-    )..where((t) => t.id.equals(package.id!))).write(
-      QurbanPackagesCompanion(
-        name: Value(package.name.trim()),
-        monthlyAmount: Value(package.monthlyAmount),
-        isActive: Value(package.isActive),
-        syncStatus: Value(_nextSyncStatus(existing.syncStatus)),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
-    await _auditLogRepository.logActivity(
-      action: 'UPDATE',
-      targetTable: 'qurban_packages',
-      recordId: package.id.toString(),
-      description: 'Update paket qurban: ${package.name}',
-    );
+    await _db.transaction(() async {
+      await (_db.update(
+        _db.qurbanPackages,
+      )..where((t) => t.id.equals(package.id!))).write(
+        QurbanPackagesCompanion(
+          name: Value(package.name.trim()),
+          monthlyAmount: Value(package.monthlyAmount),
+          isActive: Value(package.isActive),
+          syncStatus: Value(_nextSyncStatus(existing.syncStatus)),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+      await _auditLogRepository.logActivity(
+        action: 'UPDATE',
+        targetTable: 'qurban_packages',
+        recordId: package.id.toString(),
+        description: 'Update paket qurban: ${package.name}',
+      );
+    });
   }
 
   @override
@@ -205,51 +209,55 @@ class QurbanRepositoryImpl implements QurbanRepository {
     )..where((t) => t.id.equals(id))).getSingleOrNull();
     if (existing == null) return;
 
-    if (existing.syncStatus == tx_domain.SyncStatus.pendingCreate) {
-      await (_db.delete(
-        _db.qurbanPackages,
-      )..where((t) => t.id.equals(id))).go();
-    } else {
-      await (_db.update(
-        _db.qurbanPackages,
-      )..where((t) => t.id.equals(id))).write(
-        QurbanPackagesCompanion(
-          isActive: const Value(false),
-          syncStatus: const Value(tx_domain.SyncStatus.pendingDelete),
-          updatedAt: Value(DateTime.now()),
-        ),
+    await _db.transaction(() async {
+      if (existing.syncStatus == tx_domain.SyncStatus.pendingCreate) {
+        await (_db.delete(
+          _db.qurbanPackages,
+        )..where((t) => t.id.equals(id))).go();
+      } else {
+        await (_db.update(
+          _db.qurbanPackages,
+        )..where((t) => t.id.equals(id))).write(
+          QurbanPackagesCompanion(
+            isActive: const Value(false),
+            syncStatus: const Value(tx_domain.SyncStatus.pendingDelete),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+      await _auditLogRepository.logActivity(
+        action: 'DELETE',
+        targetTable: 'qurban_packages',
+        recordId: id.toString(),
+        description: 'Hapus paket qurban: ${existing.name}',
       );
-    }
-    await _auditLogRepository.logActivity(
-      action: 'DELETE',
-      targetTable: 'qurban_packages',
-      recordId: id.toString(),
-      description: 'Hapus paket qurban: ${existing.name}',
-    );
+    });
   }
 
   @override
   Future<void> addParticipant(QurbanParticipant participant) async {
-    await _db
-        .into(_db.qurbanParticipants)
-        .insert(
-          QurbanParticipantsCompanion.insert(
-            remoteId: Value(participant.remoteId ?? _uuid.v4()),
-            name: participant.name.trim(),
-            phone: Value(_emptyToNull(participant.phone)),
-            address: Value(_emptyToNull(participant.address)),
-            notes: Value(_emptyToNull(participant.notes)),
-            startMonth: _normalizeMonth(participant.startMonth),
-            monthlyAmount: participant.monthlyAmount,
-            totalMonths: Value(participant.totalMonths),
-            syncStatus: const Value(tx_domain.SyncStatus.pendingCreate),
-          ),
-        );
-    await _auditLogRepository.logActivity(
-      action: 'CREATE',
-      targetTable: 'qurban_participants',
-      description: 'Peserta qurban: ${participant.name}',
-    );
+    await _db.transaction(() async {
+      await _db
+          .into(_db.qurbanParticipants)
+          .insert(
+            QurbanParticipantsCompanion.insert(
+              remoteId: Value(participant.remoteId ?? _uuid.v4()),
+              name: participant.name.trim(),
+              phone: Value(_emptyToNull(participant.phone)),
+              address: Value(_emptyToNull(participant.address)),
+              notes: Value(_emptyToNull(participant.notes)),
+              startMonth: _normalizeMonth(participant.startMonth),
+              monthlyAmount: participant.monthlyAmount,
+              totalMonths: Value(participant.totalMonths),
+              syncStatus: const Value(tx_domain.SyncStatus.pendingCreate),
+            ),
+          );
+      await _auditLogRepository.logActivity(
+        action: 'CREATE',
+        targetTable: 'qurban_participants',
+        description: 'Peserta qurban: ${participant.name}',
+      );
+    });
   }
 
   @override
@@ -260,27 +268,29 @@ class QurbanRepositoryImpl implements QurbanRepository {
     )..where((t) => t.id.equals(participant.id!))).getSingleOrNull();
     if (existing == null) return;
 
-    await (_db.update(
-      _db.qurbanParticipants,
-    )..where((t) => t.id.equals(participant.id!))).write(
-      QurbanParticipantsCompanion(
-        name: Value(participant.name.trim()),
-        phone: Value(_emptyToNull(participant.phone)),
-        address: Value(_emptyToNull(participant.address)),
-        notes: Value(_emptyToNull(participant.notes)),
-        startMonth: Value(_normalizeMonth(participant.startMonth)),
-        monthlyAmount: Value(participant.monthlyAmount),
-        totalMonths: Value(participant.totalMonths),
-        syncStatus: Value(_nextSyncStatus(existing.syncStatus)),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
-    await _auditLogRepository.logActivity(
-      action: 'UPDATE',
-      targetTable: 'qurban_participants',
-      recordId: participant.id.toString(),
-      description: 'Update peserta qurban: ${participant.name}',
-    );
+    await _db.transaction(() async {
+      await (_db.update(
+        _db.qurbanParticipants,
+      )..where((t) => t.id.equals(participant.id!))).write(
+        QurbanParticipantsCompanion(
+          name: Value(participant.name.trim()),
+          phone: Value(_emptyToNull(participant.phone)),
+          address: Value(_emptyToNull(participant.address)),
+          notes: Value(_emptyToNull(participant.notes)),
+          startMonth: Value(_normalizeMonth(participant.startMonth)),
+          monthlyAmount: Value(participant.monthlyAmount),
+          totalMonths: Value(participant.totalMonths),
+          syncStatus: Value(_nextSyncStatus(existing.syncStatus)),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+      await _auditLogRepository.logActivity(
+        action: 'UPDATE',
+        targetTable: 'qurban_participants',
+        recordId: participant.id.toString(),
+        description: 'Update peserta qurban: ${participant.name}',
+      );
+    });
   }
 
   @override
@@ -303,26 +313,28 @@ class QurbanRepositoryImpl implements QurbanRepository {
       throw Exception('Peserta sudah memiliki pembayaran');
     }
 
-    if (existing.syncStatus == tx_domain.SyncStatus.pendingCreate) {
-      await (_db.delete(
-        _db.qurbanParticipants,
-      )..where((t) => t.id.equals(id))).go();
-    } else {
-      await (_db.update(
-        _db.qurbanParticipants,
-      )..where((t) => t.id.equals(id))).write(
-        QurbanParticipantsCompanion(
-          syncStatus: const Value(tx_domain.SyncStatus.pendingDelete),
-          updatedAt: Value(DateTime.now()),
-        ),
+    await _db.transaction(() async {
+      if (existing.syncStatus == tx_domain.SyncStatus.pendingCreate) {
+        await (_db.delete(
+          _db.qurbanParticipants,
+        )..where((t) => t.id.equals(id))).go();
+      } else {
+        await (_db.update(
+          _db.qurbanParticipants,
+        )..where((t) => t.id.equals(id))).write(
+          QurbanParticipantsCompanion(
+            syncStatus: const Value(tx_domain.SyncStatus.pendingDelete),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+      await _auditLogRepository.logActivity(
+        action: 'DELETE',
+        targetTable: 'qurban_participants',
+        recordId: id.toString(),
+        description: 'Hapus peserta qurban: ${existing.name}',
       );
-    }
-    await _auditLogRepository.logActivity(
-      action: 'DELETE',
-      targetTable: 'qurban_participants',
-      recordId: id.toString(),
-      description: 'Hapus peserta qurban: ${existing.name}',
-    );
+    });
   }
 
   @override
@@ -363,14 +375,14 @@ class QurbanRepositoryImpl implements QurbanRepository {
               syncStatus: const Value(tx_domain.SyncStatus.pendingCreate),
             ),
           );
-    });
 
-    await _auditLogRepository.logActivity(
-      action: 'CREATE',
-      targetTable: 'qurban_payments',
-      recordId: payment.participantId.toString(),
-      description: 'Pembayaran qurban: ${payment.amount}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'CREATE',
+        targetTable: 'qurban_payments',
+        recordId: payment.participantId.toString(),
+        description: 'Pembayaran qurban: ${payment.amount}',
+      );
+    });
   }
 
   @override
@@ -386,7 +398,9 @@ class QurbanRepositoryImpl implements QurbanRepository {
       final participant = await _getParticipantOrThrow(payment.participantId);
       final paymentRemoteId =
           existing.remoteId ?? payment.remoteId ?? _uuid.v4();
-      var transactionId = existing.transactionId;
+      // Recover the link before assuming there isn't one, otherwise editing a
+      // payment that arrived via sync creates a duplicate income transaction.
+      var transactionId = await _resolveLinkedTransactionId(existing);
 
       if (transactionId == null) {
         transactionId = await _db
@@ -445,14 +459,14 @@ class QurbanRepositoryImpl implements QurbanRepository {
           updatedAt: Value(DateTime.now()),
         ),
       );
-    });
 
-    await _auditLogRepository.logActivity(
-      action: 'UPDATE',
-      targetTable: 'qurban_payments',
-      recordId: payment.id.toString(),
-      description: 'Update pembayaran qurban: ${payment.amount}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'UPDATE',
+        targetTable: 'qurban_payments',
+        recordId: payment.id.toString(),
+        description: 'Update pembayaran qurban: ${payment.amount}',
+      );
+    });
   }
 
   @override
@@ -461,9 +475,14 @@ class QurbanRepositoryImpl implements QurbanRepository {
       final payment = await (_db.select(
         _db.qurbanPayments,
       )..where((t) => t.id.equals(id))).getSingleOrNull();
+      // `return` here only exits this transaction callback (the delete
+      // simply doesn't happen), not the outer method -- so the audit log
+      // call must live in this same branch, not after the transaction,
+      // otherwise a delete of a non-existent payment would still log a
+      // phantom "deleted" entry.
       if (payment == null) return;
 
-      await _deleteLinkedTransaction(payment.transactionId);
+      await _deleteLinkedTransaction(await _resolveLinkedTransactionId(payment));
 
       if (payment.syncStatus == tx_domain.SyncStatus.pendingCreate) {
         await (_db.delete(
@@ -479,14 +498,37 @@ class QurbanRepositoryImpl implements QurbanRepository {
           ),
         );
       }
-    });
 
-    await _auditLogRepository.logActivity(
-      action: 'DELETE',
-      targetTable: 'qurban_payments',
-      recordId: id.toString(),
-      description: 'Hapus pembayaran qurban',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'DELETE',
+        targetTable: 'qurban_payments',
+        recordId: id.toString(),
+        description: 'Hapus pembayaran qurban',
+      );
+    });
+  }
+
+  // A payment pulled from the server before its cash transaction reached this
+  // device stores transactionId = null. The link is still recoverable, because
+  // every qurban transaction carries the payment's remoteId in source_ref.
+  // Without this lookup, updatePayment() would mint a SECOND income
+  // transaction for the same payment (cash balance too high by one payment)
+  // and deletePayment() would leave the original income orphaned in the books.
+  Future<int?> _resolveLinkedTransactionId(QurbanPaymentEntity payment) async {
+    if (payment.transactionId != null) return payment.transactionId;
+    final paymentRemoteId = payment.remoteId;
+    if (paymentRemoteId == null) return null;
+
+    final linked =
+        await (_db.select(_db.transactions)
+              ..where(
+                (t) =>
+                    t.sourceRef.equals(paymentRemoteId) &
+                    t.source.equals(tx_domain.TransactionSource.qurban),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    return linked?.id;
   }
 
   Future<void> _deleteLinkedTransaction(int? transactionId) async {
@@ -532,8 +574,13 @@ class QurbanRepositoryImpl implements QurbanRepository {
     final start = _normalizeMonth(participant.startMonth);
     final current = _normalizeMonth(now);
     if (current.isBefore(start)) return 0;
+    // No `+ 1`: the registration month itself is a grace period (0 due),
+    // matching a normal monthly installment -- the first month only
+    // becomes due once it has fully elapsed. The old `+ 1` made a
+    // participant registered this month show as "overdue" immediately,
+    // before they could possibly have paid anything yet.
     final dueMonths =
-        ((current.year - start.year) * 12 + current.month - start.month + 1)
+        ((current.year - start.year) * 12 + current.month - start.month)
             .clamp(0, participant.totalMonths)
             .toInt();
     return dueMonths * participant.monthlyAmount;

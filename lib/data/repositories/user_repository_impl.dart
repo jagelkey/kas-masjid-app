@@ -39,46 +39,55 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> addUser(domain.UserEntity user) async {
-    await _db
-        .into(_db.users)
-        .insert(
-          UsersCompanion(
-            remoteId: Value(user.remoteId),
-            email: Value(user.email),
-            username: Value(user.username),
-            fullName: Value(user.fullName),
-            role: Value(user.role),
-            syncStatus: Value(domain_status.SyncStatus.values[user.syncStatus]),
-          ),
-        );
+    // Wrapped in a transaction so the audit trail entry can never be lost
+    // (or the write silently un-recorded) if the app is killed between the
+    // two statements.
+    await _db.transaction(() async {
+      await _db
+          .into(_db.users)
+          .insert(
+            UsersCompanion(
+              remoteId: Value(user.remoteId),
+              email: Value(user.email),
+              username: Value(user.username),
+              fullName: Value(user.fullName),
+              role: Value(user.role),
+              syncStatus: Value(
+                domain_status.SyncStatus.values[user.syncStatus],
+              ),
+            ),
+          );
 
-    await _auditLogRepository.logActivity(
-      action: 'CREATE',
-      targetTable: 'users',
-      description: 'User: ${user.fullName} (${user.role})',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'CREATE',
+        targetTable: 'users',
+        description: 'User: ${user.fullName} (${user.role})',
+      );
+    });
   }
 
   @override
   Future<void> updateUser(domain.UserEntity user) async {
     if (user.id == null) return;
-    await (_db.update(_db.users)..where((t) => t.id.equals(user.id!))).write(
-      UsersCompanion(
-        email: Value(user.email),
-        fullName: Value(user.fullName),
-        username: Value(user.username),
-        role: Value(user.role),
-        syncStatus: Value(domain_status.SyncStatus.values[user.syncStatus]),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
+    await _db.transaction(() async {
+      await (_db.update(_db.users)..where((t) => t.id.equals(user.id!))).write(
+        UsersCompanion(
+          email: Value(user.email),
+          fullName: Value(user.fullName),
+          username: Value(user.username),
+          role: Value(user.role),
+          syncStatus: Value(domain_status.SyncStatus.values[user.syncStatus]),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
 
-    await _auditLogRepository.logActivity(
-      action: 'UPDATE',
-      targetTable: 'users',
-      recordId: user.id.toString(),
-      description: 'Updated User: ${user.fullName}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'UPDATE',
+        targetTable: 'users',
+        recordId: user.id.toString(),
+        description: 'Updated User: ${user.fullName}',
+      );
+    });
   }
 
   @override
@@ -93,9 +102,18 @@ class UserRepositoryImpl implements UserRepository {
       _db.auditLogs,
     )..where((t) => t.userId.equals(user.remoteId ?? user.email))).get();
 
-    final relatedActivities = await (_db.select(
-      _db.activities,
-    )..where((t) => t.picName.equals(user.fullName ?? ''))).get();
+    // picName is a free-text copy of the user's name, not a real foreign
+    // key, so this match is inherently best-effort. Guard against the
+    // specific bug where a null fullName silently matched against an
+    // empty-string picName -- which never matches a NULL picName column in
+    // SQL, so the check always passed vacuously for any user with no
+    // stored full name, without anyone intending that as a valid outcome.
+    final trimmedFullName = user.fullName?.trim();
+    final relatedActivities = (trimmedFullName == null || trimmedFullName.isEmpty)
+        ? const <ActivityEntity>[]
+        : await (_db.select(
+            _db.activities,
+          )..where((t) => t.picName.equals(trimmedFullName))).get();
 
     if (relatedLogs.isNotEmpty || relatedActivities.isNotEmpty) {
       throw Exception(
@@ -103,23 +121,28 @@ class UserRepositoryImpl implements UserRepository {
       );
     }
 
-    if (user.remoteId != null) {
-      await (_db.update(_db.users)..where((t) => t.id.equals(id))).write(
-        UsersCompanion(
-          syncStatus: Value(domain_status.SyncStatus.pendingDelete),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
-    } else {
-      await (_db.delete(_db.users)..where((t) => t.id.equals(id))).go();
-    }
+    // Wrapped in a transaction so the audit trail entry can never be lost
+    // (or the delete silently un-recorded) if the app is killed between the
+    // two statements.
+    await _db.transaction(() async {
+      if (user.remoteId != null) {
+        await (_db.update(_db.users)..where((t) => t.id.equals(id))).write(
+          UsersCompanion(
+            syncStatus: Value(domain_status.SyncStatus.pendingDelete),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      } else {
+        await (_db.delete(_db.users)..where((t) => t.id.equals(id))).go();
+      }
 
-    await _auditLogRepository.logActivity(
-      action: 'DELETE',
-      targetTable: 'users',
-      recordId: id.toString(),
-      description: 'Deleted User: ${user.fullName}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'DELETE',
+        targetTable: 'users',
+        recordId: id.toString(),
+        description: 'Deleted User: ${user.fullName}',
+      );
+    });
   }
 
   @override

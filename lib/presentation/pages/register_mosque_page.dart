@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:masjid_app/core/constants/env.dart';
 import 'package:masjid_app/domain/entities/mosque_profile.dart';
 import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart';
 import 'package:masjid_app/presentation/blocs/profile/profile_bloc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 class RegisterMosquePage extends StatefulWidget {
   const RegisterMosquePage({super.key});
@@ -25,6 +27,43 @@ class _RegisterMosquePageState extends State<RegisterMosquePage> {
   // To track if we are in the process of saving profile after auth
   bool _isSavingProfile = false;
 
+  // The real, unbypassable gate lives in the claim_first_admin() DB function
+  // (it can only ever succeed once). This is just a UX nicety so a visitor
+  // doesn't fill out the whole form only to be rejected at the end.
+  bool _checkingEligibility = true;
+  bool _registrationBlocked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkEligibility();
+  }
+
+  Future<void> _checkEligibility() async {
+    if (!Env.hasValidConfig) {
+      // Offline/local-only mode has no shared backend to protect against --
+      // each device is its own isolated instance.
+      if (mounted) setState(() => _checkingEligibility = false);
+      return;
+    }
+
+    try {
+      final alreadyClaimed = await Supabase.instance.client.rpc(
+        'mosque_admin_exists',
+      );
+      if (mounted) {
+        setState(() {
+          _registrationBlocked = alreadyClaimed == true;
+          _checkingEligibility = false;
+        });
+      }
+    } catch (e) {
+      // Fail open on network/RPC errors -- the actual security boundary is
+      // claim_first_admin() at submit time, not this pre-check.
+      if (mounted) setState(() => _checkingEligibility = false);
+    }
+  }
+
   @override
   void dispose() {
     _mosqueNameController.dispose();
@@ -36,21 +75,70 @@ class _RegisterMosquePageState extends State<RegisterMosquePage> {
     super.dispose();
   }
 
+  AppBar _buildAppBar() => AppBar(
+    title: const Text(
+      'Daftar Masjid Baru',
+      style: TextStyle(fontWeight: FontWeight.bold),
+    ),
+    centerTitle: true,
+    backgroundColor: Colors.white,
+    foregroundColor: Colors.black87,
+    elevation: 0,
+    iconTheme: const IconThemeData(color: Colors.black87),
+  );
+
   @override
   Widget build(BuildContext context) {
+    if (_checkingEligibility) {
+      return Scaffold(
+        backgroundColor: Colors.grey[50],
+        appBar: _buildAppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_registrationBlocked) {
+      return Scaffold(
+        backgroundColor: Colors.grey[50],
+        appBar: _buildAppBar(),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.mosque_outlined,
+                  size: 48,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Masjid ini sudah terdaftar dan memiliki admin.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Silakan login, atau hubungi admin masjid untuk didaftarkan sebagai pengguna baru.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () => context.go('/login'),
+                  child: const Text('Ke Halaman Login'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text(
-          'Daftar Masjid Baru',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-      ),
+      appBar: _buildAppBar(),
       body: MultiBlocListener(
         listeners: [
           BlocListener<AuthBloc, AuthState>(

@@ -2,6 +2,8 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:masjid_app/domain/entities/activity.dart';
+import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart'
+    show UserRole;
 import 'package:masjid_app/presentation/pages/main_page.dart';
 import 'package:masjid_app/presentation/pages/dashboard_page.dart';
 import 'package:masjid_app/domain/entities/transaction.dart';
@@ -30,13 +32,63 @@ class GlobalAuthNotifier extends ChangeNotifier {
   bool _isOffline = false;
   bool get isOffline => _isOffline;
 
+  // Mirrors the current session's role so the router's redirect (a plain
+  // top-level GoRouter, not a widget) can enforce role-based access without
+  // depending on BuildContext/Provider lookups. AuthBloc keeps this in sync
+  // on every login/logout/registration.
+  UserRole? _currentRole;
+  UserRole? get currentRole => _currentRole;
+
   void setOffline(bool value) {
     _isOffline = value;
+    notifyListeners();
+  }
+
+  void setRole(UserRole? role) {
+    _currentRole = role;
     notifyListeners();
   }
 }
 
 final globalAuthNotifier = GlobalAuthNotifier();
+
+// Routes that mutate data and must be restricted to specific roles even
+// though RLS already blocks the underlying writes -- without this, a
+// non-privileged user reaches the form, sees a false "success" (local
+// insert), and only fails silently in the background at sync time.
+bool Function(UserRole)? _permissionForPath(String path) {
+  const transactionPaths = {'/transactions/add', '/transactions/edit'};
+  const activityPaths = {'/activities/add', '/activities/edit'};
+  const qurbanPaths = {
+    '/qurban/packages',
+    '/qurban/participant/add',
+    '/qurban/participant/edit',
+    '/qurban/payment/add',
+    '/qurban/payment/edit',
+  };
+  const settingsPaths = {'/settings/users', '/settings/audit-logs'};
+
+  if (transactionPaths.contains(path)) {
+    return (role) => role.canManageTransactions;
+  }
+  if (activityPaths.contains(path)) return (role) => role.canManageActivities;
+  if (qurbanPaths.contains(path)) return (role) => role.canManageQurban;
+  if (settingsPaths.contains(path)) return (role) => role.canManageSettings;
+  return null;
+}
+
+// The only routes reachable without an authenticated session.
+const _authPaths = {'/login', '/register', '/register-mosque'};
+
+// Returns a redirect target if `path` is role-restricted and the current
+// role (from globalAuthNotifier) doesn't pass, otherwise null (allow).
+String? _roleRedirect(String path) {
+  final permissionCheck = _permissionForPath(path);
+  if (permissionCheck == null) return null;
+  final role = globalAuthNotifier.currentRole;
+  if (role == null || !permissionCheck(role)) return '/';
+  return null;
+}
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _shellNavigatorKey =
@@ -47,20 +99,24 @@ final appRouter = GoRouter(
   refreshListenable: globalAuthNotifier,
   initialLocation: '/',
   redirect: (context, state) {
+    final path = state.uri.path;
+    final isAuthPath = _authPaths.contains(path);
+
     if (globalAuthNotifier.isOffline) {
-      if (state.uri.toString() == '/login' ||
-          state.uri.toString() == '/register' ||
-          state.uri.toString() == '/register-mosque') {
-        return '/';
-      }
-      return null;
+      if (isAuthPath) return '/';
+      return _roleRedirect(path);
     }
 
-    // Check if Supabase is initialized before accessing instance
     if (!Env.hasValidConfig) {
-      // If no config, maybe force login or offline?
-      // For now, let's assume offline if no config
-      return null;
+      // Local-only build: there is no server session to consult, so a locally
+      // restored account IS the session -- and that case is exactly what the
+      // isOffline branch above handles. Reaching here therefore means nobody is
+      // signed in, so only the auth screens may render. Previously this branch
+      // returned _roleRedirect(path), which checks the ROLE but never whether a
+      // session exists at all: since _permissionForPath('/') is null, an
+      // unauthenticated user (currentRole == null) sailed straight onto the
+      // dashboard and the entire cash book with no login screen.
+      return isAuthPath ? null : '/login';
     }
 
     Session? session;
@@ -75,23 +131,13 @@ final appRouter = GoRouter(
       session = null;
     }
 
-    final isLoggingIn = state.uri.toString() == '/login';
-    final isRegistering = state.uri.toString() == '/register';
-    final isRegisteringMosque = state.uri.toString() == '/register-mosque';
-
-    if (session == null &&
-        !isLoggingIn &&
-        !isRegistering &&
-        !isRegisteringMosque) {
-      return '/login';
+    if (session == null) {
+      return isAuthPath ? null : '/login';
     }
 
-    if (session != null &&
-        (isLoggingIn || isRegistering || isRegisteringMosque)) {
-      return '/';
-    }
+    if (isAuthPath) return '/';
 
-    return null;
+    return _roleRedirect(path);
   },
   routes: [
     GoRoute(

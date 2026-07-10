@@ -91,27 +91,11 @@ class TransactionLoaded extends TransactionState {
     filterCategory,
   ];
 
-  TransactionLoaded copyWith({
-    List<Transaction>? transactions,
-    List<Transaction>? filteredTransactions,
-    double? totalBalance,
-    double? incomeThisMonth,
-    double? expenseThisMonth,
-    DateTimeRange? filterDateRange,
-    TransactionType? filterType,
-    String? filterCategory,
-  }) {
-    return TransactionLoaded(
-      transactions: transactions ?? this.transactions,
-      filteredTransactions: filteredTransactions ?? this.filteredTransactions,
-      totalBalance: totalBalance ?? this.totalBalance,
-      incomeThisMonth: incomeThisMonth ?? this.incomeThisMonth,
-      expenseThisMonth: expenseThisMonth ?? this.expenseThisMonth,
-      filterDateRange: filterDateRange ?? this.filterDateRange,
-      filterType: filterType ?? this.filterType,
-      filterCategory: filterCategory ?? this.filterCategory,
-    );
-  }
+  // Deliberately no copyWith(): the three filter fields are nullable and
+  // "null" is a meaningful value (= no filter). A `x ?? this.x` copyWith
+  // cannot express clearing them, so a Reset would silently keep the old
+  // filter in state -- and the PDF export reads the period straight off
+  // state.filterDateRange. Build TransactionLoaded explicitly instead.
 }
 
 class TransactionOperationFailure extends TransactionLoaded {
@@ -166,10 +150,16 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
 
   TransactionBloc(this._repository) : super(TransactionInitial()) {
     on<LoadTransactions>(_onLoadTransactions, transformer: restartable());
-    on<TransactionsUpdated>(_onTransactionsUpdated);
-    on<AddTransactionEvent>(_onAddTransaction);
-    on<UpdateTransactionEvent>(_onUpdateTransaction);
-    on<DeleteTransactionEvent>(_onDeleteTransaction);
+    // restartable(): if the DB stream emits again before the previous
+    // balance/income/expense refresh finished, drop the stale one instead
+    // of letting two overlapping refreshes resolve out of order.
+    on<TransactionsUpdated>(_onTransactionsUpdated, transformer: restartable());
+    // droppable(): ignore a new Add/Update/Delete while one is already
+    // in flight, so a double-tap (or any duplicate dispatch) can't create
+    // two transactions for a single user action.
+    on<AddTransactionEvent>(_onAddTransaction, transformer: droppable());
+    on<UpdateTransactionEvent>(_onUpdateTransaction, transformer: droppable());
+    on<DeleteTransactionEvent>(_onDeleteTransaction, transformer: droppable());
     on<ApplyFilterEvent>(_onApplyFilter);
   }
 
@@ -284,8 +274,16 @@ class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
       );
 
       emit(
-        currentState.copyWith(
+        TransactionLoaded(
+          transactions: currentState.transactions,
           filteredTransactions: filtered,
+          totalBalance: currentState.totalBalance,
+          incomeThisMonth: currentState.incomeThisMonth,
+          expenseThisMonth: currentState.expenseThisMonth,
+          // Assigned unconditionally, including null: a Reset must actually
+          // clear the filter, otherwise _onTransactionsUpdated re-applies the
+          // stale one on the next DB change and the PDF export keeps labelling
+          // the report with a period the user already cleared.
           filterDateRange: event.dateRange,
           filterType: event.type,
           filterCategory: event.category,

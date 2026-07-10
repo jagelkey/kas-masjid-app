@@ -281,7 +281,9 @@ class _UserListPageState extends State<UserListPage> {
         }
       }
 
-      // 1. Save credentials securely (so they can login offline)
+      // 1. Save credentials securely (so they can login offline).
+      // markAsLastLoggedIn: false -- this account belongs to someone else. The
+      // admin doing the provisioning must stay the current user on this device.
       await _authLocalDatasource.saveCredentials(
         email: email,
         password: password,
@@ -289,6 +291,7 @@ class _UserListPageState extends State<UserListPage> {
         userId: userId,
         metadata: {'full_name': name, 'username': normalizedUsername},
         username: normalizedUsername,
+        markAsLastLoggedIn: false,
       );
 
       // If offline, save pending password for sync
