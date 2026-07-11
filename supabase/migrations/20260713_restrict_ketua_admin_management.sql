@@ -20,6 +20,10 @@
 -- Safe to run repeatedly on an existing Supabase project.
 
 DROP POLICY IF EXISTS "Admins and Ketua can update any profile" ON public.profiles;
+-- Also drop the new names so a re-run is truly idempotent (Postgres has no
+-- CREATE POLICY IF NOT EXISTS; without these, a second run errors).
+DROP POLICY IF EXISTS "Admins can update any profile" ON public.profiles;
+DROP POLICY IF EXISTS "Ketua can update non-admin profiles" ON public.profiles;
 
 CREATE POLICY "Admins can update any profile" ON public.profiles FOR UPDATE USING (
   EXISTS (SELECT 1 FROM public.profiles caller WHERE caller.id = auth.uid() AND caller.role = 'admin')
