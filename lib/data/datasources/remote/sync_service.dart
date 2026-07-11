@@ -102,7 +102,11 @@ class SyncService {
       final cursorRow =
           await (_db.selectOnly(_db.auditLogs)
                 ..addColumns([_db.auditLogs.createdAt.max()])
-                ..where(_db.auditLogs.remoteId.isNotNull()))
+                ..where(
+                  _db.auditLogs.syncStatus.equals(
+                    domain.SyncStatus.synced.index,
+                  ),
+                ))
               .getSingleOrNull();
       var cursor = cursorRow?.read(_db.auditLogs.createdAt.max());
 
@@ -478,7 +482,11 @@ class SyncService {
       final cursorRow =
           await (_db.selectOnly(_db.transactions)
                 ..addColumns([_db.transactions.updatedAt.max()])
-                ..where(_db.transactions.remoteId.isNotNull()))
+                ..where(
+                  _db.transactions.syncStatus.equals(
+                    domain.SyncStatus.synced.index,
+                  ),
+                ))
               .getSingleOrNull();
       var cursor = cursorRow?.read(_db.transactions.updatedAt.max());
 
@@ -695,7 +703,11 @@ class SyncService {
       final cursorRow =
           await (_db.selectOnly(_db.qurbanPackages)
                 ..addColumns([_db.qurbanPackages.updatedAt.max()])
-                ..where(_db.qurbanPackages.remoteId.isNotNull()))
+                ..where(
+                  _db.qurbanPackages.syncStatus.equals(
+                    domain.SyncStatus.synced.index,
+                  ),
+                ))
               .getSingleOrNull();
       var cursor = cursorRow?.read(_db.qurbanPackages.updatedAt.max());
 
@@ -924,7 +936,11 @@ class SyncService {
       final cursorRow =
           await (_db.selectOnly(_db.qurbanParticipants)
                 ..addColumns([_db.qurbanParticipants.updatedAt.max()])
-                ..where(_db.qurbanParticipants.remoteId.isNotNull()))
+                ..where(
+                  _db.qurbanParticipants.syncStatus.equals(
+                    domain.SyncStatus.synced.index,
+                  ),
+                ))
               .getSingleOrNull();
       var cursor = cursorRow?.read(_db.qurbanParticipants.updatedAt.max());
 
@@ -1098,7 +1114,11 @@ class SyncService {
       final cursorRow =
           await (_db.selectOnly(_db.qurbanPayments)
                 ..addColumns([_db.qurbanPayments.updatedAt.max()])
-                ..where(_db.qurbanPayments.remoteId.isNotNull()))
+                ..where(
+                  _db.qurbanPayments.syncStatus.equals(
+                    domain.SyncStatus.synced.index,
+                  ),
+                ))
               .getSingleOrNull();
       var cursor = cursorRow?.read(_db.qurbanPayments.updatedAt.max());
 
@@ -1371,7 +1391,11 @@ class SyncService {
       final cursorRow =
           await (_db.selectOnly(_db.activities)
                 ..addColumns([_db.activities.updatedAt.max()])
-                ..where(_db.activities.remoteId.isNotNull()))
+                ..where(
+                  _db.activities.syncStatus.equals(
+                    domain.SyncStatus.synced.index,
+                  ),
+                ))
               .getSingleOrNull();
       var cursor = cursorRow?.read(_db.activities.updatedAt.max());
 
@@ -1778,7 +1802,11 @@ class SyncService {
       final cursorRow =
           await (_db.selectOnly(_db.users)
                 ..addColumns([_db.users.updatedAt.max()])
-                ..where(_db.users.remoteId.isNotNull()))
+                ..where(
+                  _db.users.syncStatus.equals(
+                    domain.SyncStatus.synced.index,
+                  ),
+                ))
               .getSingleOrNull();
       var cursor = cursorRow?.read(_db.users.updatedAt.max());
 
