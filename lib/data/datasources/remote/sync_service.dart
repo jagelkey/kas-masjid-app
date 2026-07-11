@@ -1646,6 +1646,13 @@ class SyncService {
                   ? domain.SyncStatus.pendingUpdate
                   : domain.SyncStatus.synced,
             ),
+            // Adopt the durable remote URL locally after a successful upload so
+            // this device stops depending on the local file (which may later be
+            // cleared). _pullMosqueProfile won't repair it -- the remote row
+            // isn't "newer" -- so it has to happen here.
+            logoPath: (!logoUploadFailed && logoUrl != null)
+                ? Value(logoUrl)
+                : const Value.absent(),
             updatedAt: Value(DateTime.tryParse(response['updated_at'] ?? '')),
           ),
         );
