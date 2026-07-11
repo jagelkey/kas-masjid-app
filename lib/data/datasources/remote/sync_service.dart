@@ -207,6 +207,16 @@ class SyncService {
     _syncResultController.close();
   }
 
+  // Soft-delete payload. We UPDATE deleted_at instead of hard-DELETEing so the
+  // removal reaches other devices on their next pull -- a hard DELETE was
+  // invisible to pulls (they only insert/update), leaving already-synced
+  // devices holding the row forever with permanently wrong balances/totals.
+  // handle_updated_at() bumps updated_at on this UPDATE, so the pull cursor
+  // observes the tombstone.
+  Map<String, dynamic> _deletedAtPayload() => {
+    'deleted_at': DateTime.now().toUtc().toIso8601String(),
+  };
+
   Future<SyncResult> syncData() async {
     if (_isSyncing) {
       return SyncResult.failure(['Sync already in progress']);
@@ -457,7 +467,10 @@ class SyncService {
           );
         } else if (t.syncStatus == domain.SyncStatus.pendingDelete &&
             t.remoteId != null) {
-          await _supabase!.from('transactions').delete().eq('id', t.remoteId!);
+          await _supabase!
+              .from('transactions')
+              .update(_deletedAtPayload())
+              .eq('id', t.remoteId!);
           await (_db.delete(
             _db.transactions,
           )..where((r) => r.id.equals(t.id))).go();
@@ -509,6 +522,19 @@ class SyncService {
             _db.transactions,
           )..where((t) => t.remoteId.equals(remoteId))).get();
           final local = localRows.isEmpty ? null : localRows.first;
+
+          // Tombstone: soft-deleted on another device. Mirror the delete
+          // locally (only when we hold no unsynced local edit of our own)
+          // instead of re-inserting/updating it below.
+          if (remote['deleted_at'] != null) {
+            if (local != null &&
+                local.syncStatus == domain.SyncStatus.synced) {
+              await (_db.delete(
+                _db.transactions,
+              )..where((r) => r.id.equals(local.id))).go();
+            }
+            continue;
+          }
           final remoteUpdatedAt = DateTime.tryParse(
             remote['updated_at']?.toString() ?? '',
           );
@@ -615,7 +641,7 @@ class SyncService {
           if (package.remoteId != null) {
             await _supabase!
                 .from('qurban_packages')
-                .delete()
+                .update(_deletedAtPayload())
                 .eq('id', package.remoteId!);
           }
           await (_db.delete(
@@ -730,6 +756,19 @@ class SyncService {
             _db.qurbanPackages,
           )..where((t) => t.remoteId.equals(remoteId))).get();
           final local = localRows.isEmpty ? null : localRows.first;
+
+          // Tombstone: soft-deleted on another device. Mirror the delete
+          // locally (only when we hold no unsynced local edit of our own)
+          // instead of re-inserting/updating it below.
+          if (remote['deleted_at'] != null) {
+            if (local != null &&
+                local.syncStatus == domain.SyncStatus.synced) {
+              await (_db.delete(
+                _db.qurbanPackages,
+              )..where((r) => r.id.equals(local.id))).go();
+            }
+            continue;
+          }
           final remoteUpdatedAt = DateTime.tryParse(
             remote['updated_at']?.toString() ?? '',
           );
@@ -828,7 +867,7 @@ class SyncService {
           }
           await _supabase
               .from('qurban_participants')
-              .delete()
+              .update(_deletedAtPayload())
               .eq('id', participant.remoteId!);
         }
         await (_db.delete(
@@ -963,6 +1002,19 @@ class SyncService {
             _db.qurbanParticipants,
           )..where((t) => t.remoteId.equals(remoteId))).get();
           final local = localRows.isEmpty ? null : localRows.first;
+
+          // Tombstone: soft-deleted on another device. Mirror the delete
+          // locally (only when we hold no unsynced local edit of our own)
+          // instead of re-inserting/updating it below.
+          if (remote['deleted_at'] != null) {
+            if (local != null &&
+                local.syncStatus == domain.SyncStatus.synced) {
+              await (_db.delete(
+                _db.qurbanParticipants,
+              )..where((r) => r.id.equals(local.id))).go();
+            }
+            continue;
+          }
           final remoteUpdatedAt = DateTime.tryParse(
             remote['updated_at']?.toString() ?? '',
           );
@@ -1033,7 +1085,7 @@ class SyncService {
           if (payment.remoteId != null) {
             await _supabase!
                 .from('qurban_payments')
-                .delete()
+                .update(_deletedAtPayload())
                 .eq('id', payment.remoteId!);
           }
           await (_db.delete(
@@ -1137,6 +1189,26 @@ class SyncService {
 
         for (final remote in response) {
           final remoteId = remote['id'] as String;
+
+          // Tombstone: soft-deleted on another device. Mirror the delete
+          // locally (only when we hold no unsynced local edit) before the
+          // participant/transaction resolution below.
+          if (remote['deleted_at'] != null) {
+            final deletedRows = await (_db.select(
+              _db.qurbanPayments,
+            )..where((t) => t.remoteId.equals(remoteId))).get();
+            final deletedLocal = deletedRows.isEmpty
+                ? null
+                : deletedRows.first;
+            if (deletedLocal != null &&
+                deletedLocal.syncStatus == domain.SyncStatus.synced) {
+              await (_db.delete(
+                _db.qurbanPayments,
+              )..where((r) => r.id.equals(deletedLocal.id))).go();
+            }
+            continue;
+          }
+
           final participantRemoteId = remote['participant_id']?.toString();
           if (participantRemoteId == null) continue;
 
@@ -1359,7 +1431,10 @@ class SyncService {
       final ids = chunk.map((a) => a.remoteId!).toList();
 
       try {
-        await _supabase!.from('activities').delete().inFilter('id', ids);
+        await _supabase!
+            .from('activities')
+            .update(_deletedAtPayload())
+            .inFilter('id', ids);
         for (final a in chunk) {
           await (_db.delete(
             _db.activities,
@@ -1368,7 +1443,10 @@ class SyncService {
       } catch (e) {
         for (final a in chunk) {
           try {
-            await _supabase!.from('activities').delete().eq('id', a.remoteId!);
+            await _supabase!
+                .from('activities')
+                .update(_deletedAtPayload())
+                .eq('id', a.remoteId!);
             await (_db.delete(
               _db.activities,
             )..where((r) => r.id.equals(a.id))).go();
@@ -1418,6 +1496,19 @@ class SyncService {
             _db.activities,
           )..where((t) => t.remoteId.equals(remoteId))).get();
           final local = localRows.isEmpty ? null : localRows.first;
+
+          // Tombstone: soft-deleted on another device. Mirror the delete
+          // locally (only when we hold no unsynced local edit of our own)
+          // instead of re-inserting/updating it below.
+          if (remote['deleted_at'] != null) {
+            if (local != null &&
+                local.syncStatus == domain.SyncStatus.synced) {
+              await (_db.delete(
+                _db.activities,
+              )..where((r) => r.id.equals(local.id))).go();
+            }
+            continue;
+          }
           final remoteUpdatedAt = DateTime.tryParse(
             remote['updated_at']?.toString() ?? '',
           );
