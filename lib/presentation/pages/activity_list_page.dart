@@ -9,98 +9,165 @@ import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:masjid_app/presentation/widgets/app_components.dart';
 
-class ActivityListPage extends StatelessWidget {
+class ActivityListPage extends StatefulWidget {
   const ActivityListPage({super.key});
+
+  @override
+  State<ActivityListPage> createState() => _ActivityListPageState();
+}
+
+class _ActivityListPageState extends State<ActivityListPage> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Activity> _filter(List<Activity> activities) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return activities;
+    return activities.where((a) {
+      return a.title.toLowerCase().contains(q) ||
+          a.type.toLowerCase().contains(q) ||
+          (a.picName ?? '').toLowerCase().contains(q) ||
+          (a.description ?? '').toLowerCase().contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Jadwal Kegiatan')),
-      body: BlocBuilder<ActivityBloc, ActivityState>(
-        builder: (context, state) {
-          if (state is ActivityLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (state is ActivityLoaded) {
-            if (state.activities.isEmpty) {
-              return const AppEmptyState(
-                icon: Icons.event_note_outlined,
-                title: 'Belum ada kegiatan',
-                message: 'Tambahkan jadwal untuk mulai mengatur agenda masjid.',
-              );
-            }
-            return ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-              itemCount: state.activities.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final activity = state.activities[index];
-                return BlocBuilder<AuthBloc, AuthState>(
-                  builder: (context, authState) {
-                    bool canManage = false;
-                    if (authState is Authenticated) {
-                      canManage = authState.role.canManageActivities;
-                    } else if (authState is AuthOffline) {
-                      canManage = authState.role.canManageActivities;
-                    }
-
-                    return Material(
-                      color: AppColors.surface,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadii.md),
-                        side: const BorderSide(color: AppColors.line),
-                      ),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.tealSoft,
-                          foregroundColor: AppColors.teal,
-                          child: Text(
-                            activity.date.day.toString(),
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        title: Text(
-                          activity.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${DateFormat('EEEE, dd MMM yyyy HH:mm', 'id').format(activity.date)}\n${activity.picName ?? '-'}',
-                        ),
-                        isThreeLine: true,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (activity.syncStatus != SyncStatus.synced)
-                              const Padding(
-                                padding: EdgeInsets.only(right: 8.0),
-                                child: Icon(
-                                  Icons.cloud_upload_outlined,
-                                  size: 16,
-                                  color: AppColors.muted,
-                                ),
-                              ),
-                            if (canManage)
-                              IconButton(
-                                icon: const Icon(Icons.more_vert_rounded),
-                                onPressed: () {
-                                  _showActivityOptions(context, activity);
-                                },
-                              ),
-                          ],
-                        ),
-                        onTap: () {
-                          _showActivityDetails(context, activity);
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _query = v),
+              decoration: InputDecoration(
+                hintText: 'Cari judul, PIC, atau jenis...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear_rounded),
+                        tooltip: 'Bersihkan',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
                         },
                       ),
+                isDense: true,
+              ),
+            ),
+          ),
+          Expanded(
+            child: BlocBuilder<ActivityBloc, ActivityState>(
+              builder: (context, state) {
+                if (state is ActivityLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (state is ActivityLoaded) {
+                  if (state.activities.isEmpty) {
+                    return const AppEmptyState(
+                      icon: Icons.event_note_outlined,
+                      title: 'Belum ada kegiatan',
+                      message:
+                          'Tambahkan jadwal untuk mulai mengatur agenda masjid.',
                     );
-                  },
-                );
+                  }
+
+                  final activities = _filter(state.activities);
+                  if (activities.isEmpty) {
+                    return const AppEmptyState(
+                      icon: Icons.search_off_rounded,
+                      title: 'Tidak ada hasil',
+                      message: 'Coba kata kunci lain untuk mencari kegiatan.',
+                    );
+                  }
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                    itemCount: activities.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final activity = activities[index];
+                      return BlocBuilder<AuthBloc, AuthState>(
+                        builder: (context, authState) {
+                          bool canManage = false;
+                          if (authState is Authenticated) {
+                            canManage = authState.role.canManageActivities;
+                          } else if (authState is AuthOffline) {
+                            canManage = authState.role.canManageActivities;
+                          }
+
+                          return Material(
+                            color: AppColors.surface,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppRadii.md),
+                              side: const BorderSide(color: AppColors.line),
+                            ),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: AppColors.tealSoft,
+                                foregroundColor: AppColors.teal,
+                                child: Text(
+                                  activity.date.day.toString(),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                activity.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                '${DateFormat('EEEE, dd MMM yyyy HH:mm', 'id').format(activity.date)}\n${activity.picName ?? '-'}',
+                              ),
+                              isThreeLine: true,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (activity.syncStatus != SyncStatus.synced)
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 8.0),
+                                      child: Icon(
+                                        Icons.cloud_upload_outlined,
+                                        size: 16,
+                                        color: AppColors.muted,
+                                      ),
+                                    ),
+                                  if (canManage)
+                                    IconButton(
+                                      icon: const Icon(Icons.more_vert_rounded),
+                                      onPressed: () {
+                                        _showActivityOptions(context, activity);
+                                      },
+                                    ),
+                                ],
+                              ),
+                              onTap: () {
+                                _showActivityDetails(context, activity);
+                              },
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                }
+                return const Center(child: Text('Error loading data'));
               },
-            );
-          }
-          return const Center(child: Text('Error loading data'));
-        },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: BlocBuilder<AuthBloc, AuthState>(
         builder: (context, authState) {
@@ -202,9 +269,7 @@ class ActivityListPage extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
-              context.read<ActivityBloc>().add(
-                DeleteActivityEvent(activity.id!),
-              );
+              context.read<ActivityBloc>().add(DeleteActivityEvent(activity.id!));
               Navigator.pop(ctx);
             },
             child: const Text('Hapus', style: TextStyle(color: Colors.red)),
