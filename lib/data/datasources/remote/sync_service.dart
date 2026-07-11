@@ -1809,6 +1809,41 @@ class SyncService {
       for (final user in pendingUpdate) {
         if (user.remoteId == null) continue;
 
+        // Self-edit replay. The admin-users Edge Function requires an admin
+        // caller, so a non-admin editing their OWN profile (e.g. offline) can't
+        // go through it. RLS lets a user update their own profiles row
+        // (non-role columns), so replay the edit directly. Admins editing their
+        // own profile take this same direct self-update path.
+        if (user.remoteId == _supabase?.auth.currentUser?.id) {
+          try {
+            final response = await _supabase!
+                .from('profiles')
+                .update({
+                  'email': user.email,
+                  'full_name': user.fullName,
+                  'username': user.username,
+                })
+                .eq('id', user.remoteId!)
+                .select('updated_at')
+                .single();
+            await (_db.update(
+              _db.users,
+            )..where((r) => r.id.equals(user.id))).write(
+              UsersCompanion(
+                syncStatus: Value(domain.SyncStatus.synced),
+                updatedAt: Value(
+                  DateTime.tryParse(response['updated_at']?.toString() ?? ''),
+                ),
+              ),
+            );
+          } catch (e) {
+            final msg = 'Gagal sync profil sendiri ${user.fullName}: $e';
+            debugPrint(msg);
+            errors.add(msg);
+          }
+          continue;
+        }
+
         try {
           final result = await _adminUserService.updateUser(
             userId: user.remoteId!,

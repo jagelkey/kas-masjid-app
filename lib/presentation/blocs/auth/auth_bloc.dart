@@ -328,11 +328,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     // 2. Local DB Update (only if Supabase succeeded or offline)
     if (currentUserEntity != null) {
       try {
+        // If the online push above actually ran (authenticated + live client),
+        // the row is genuinely synced. If it was skipped because we're offline,
+        // mark it pendingUpdate so the edit is replayed on reconnect instead of
+        // being falsely marked synced and then overwritten on the next login.
+        final didOnlinePush =
+            _supabase != null && currentState is Authenticated;
         final updatedUser = currentUserEntity.copyWith(
           email: newEmail ?? currentUserEntity.email,
           username: newUsername ?? currentUserEntity.username,
           fullName: newFullName ?? currentUserEntity.fullName,
-          syncStatus: 0, // 0=synced
+          syncStatus: didOnlinePush ? 0 : 2, // 0=synced, 2=pendingUpdate
         );
         await _userRepository.updateUser(updatedUser);
       } catch (e) {
@@ -407,6 +413,26 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             },
           );
           user = response.user;
+
+          // With Supabase "Confirm email" enabled, signUp returns a user but no
+          // session. Keying success off user != null then ran claim_first_admin
+          // unauthenticated (misleading "admin already exists" error) and
+          // emitted Authenticated with no session (the router bounces to /login
+          // and every sync fails "Not authenticated"). Stop with a clear message.
+          if (user != null && response.session == null) {
+            emit(
+              AuthError(
+                event.role == UserRole.admin
+                    ? 'Akun dibuat, tetapi email harus dikonfirmasi dulu. Cek '
+                          'inbox lalu login. Jika status admin belum aktif '
+                          'setelah login, nonaktifkan "Confirm email" di '
+                          'pengaturan Auth Supabase lalu daftar ulang.'
+                    : 'Registrasi berhasil. Konfirmasi email Anda (cek inbox), '
+                          'lalu login.',
+              ),
+            );
+            return;
+          }
 
           if (user != null && event.role == UserRole.admin) {
             // First-admin bootstrap (mosque registration screen). This is
@@ -638,62 +664,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
 
       if (localUser != null) {
-        // --- AUTO MIGRATION LOGIC START ---
-        if (_supabase != null) {
-          try {
-            // Try to Sign Up this local user to Supabase
-            final response = await _supabase!.auth.signUp(
-              email: localUser.email,
-              password: event.password, // We have the password from input
-              data: localUser.metadata,
-            );
-
-            if (response.user != null) {
-              // Migration Success! Update local credentials with new Remote ID
-              await _localDatasource.saveCredentials(
-                email: localUser.email,
-                password: event.password,
-                role: localUser.role.toString().split('.').last,
-                userId: response.user!.id,
-                metadata: localUser.metadata,
-                username: localUser.metadata['username'],
-              );
-
-              // Update User Entity in DB
-              final existingUser = await _userRepository.getUserByUsername(
-                localUser.metadata['username'] ?? '',
-              );
-              if (existingUser != null) {
-                await _userRepository.updateUser(
-                  existingUser.copyWith(
-                    remoteId: response.user!.id,
-                    syncStatus: 0, // Synced
-                  ),
-                );
-              }
-
-              // Log in again with new account to get session
-              final loginResponse = await _supabase!.auth.signInWithPassword(
-                email: localUser.email,
-                password: event.password,
-              );
-
-              if (loginResponse.user != null) {
-                await _handleSuccessfulLogin(
-                  loginResponse.user!,
-                  event.password,
-                  emit,
-                );
-                return;
-              }
-            }
-          } catch (migrationError) {
-            debugPrint('Migration failed: $migrationError');
-            // Continue to offline login if migration fails
-          }
-        }
-        // --- AUTO MIGRATION LOGIC END ---
-
+        // We intentionally do NOT self-signUp offline-provisioned accounts on
+        // login. Doing so created a brand-new server account whose
+        // handle_new_user() trigger forces role='viewer' -- silently
+        // downgrading e.g. a bendahara to viewer -- and duplicated an email
+        // that the admin's _pushUsers sync later tries to create again via the
+        // admin-users Edge Function, wedging that row. Offline-provisioned
+        // users stay offline until an admin's device syncs their account (which
+        // creates it server-side with the correct role); then they log in
+        // online normally.
         await _localDatasource.setLastLoggedInEmail(localUser.email);
         globalAuthNotifier.setOffline(true);
         globalAuthNotifier.setRole(localUser.role);
@@ -754,6 +733,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           ),
         );
       }
+    } else if (existingUser.syncStatus == 2) {
+      // Preserve an offline profile edit that hasn't synced yet (pendingUpdate):
+      // overwriting it with the server's stale values here would lose it. Only
+      // refresh the server-authoritative role + remoteId; keep the edited
+      // fields and the pending status so the sync engine pushes them up.
+      await _userRepository.updateUser(
+        existingUser.copyWith(
+          remoteId: user.id,
+          role: role.toString().split('.').last,
+        ),
+      );
     } else {
       await _userRepository.updateUser(
         domain.UserEntity(
