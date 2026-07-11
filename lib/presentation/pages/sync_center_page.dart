@@ -134,6 +134,7 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
                     icon: Icons.mosque_outlined,
                     title: 'Profil Masjid',
                     count: data.profileCount,
+                    onTap: () => context.go('/settings'),
                   ),
                   _PendingTile(
                     icon: Icons.people_outline,
@@ -142,11 +143,13 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
                     subtitle: data.userCount > 0
                         ? 'Sinkronisasi akun memakai backend admin-users'
                         : null,
+                    onTap: () => context.go('/settings/users'),
                   ),
                   _PendingTile(
                     icon: Icons.history_rounded,
                     title: 'Audit Log',
                     count: data.auditCount,
+                    onTap: () => context.go('/settings/audit-logs'),
                   ),
                   const SizedBox(height: 20),
                   BlocBuilder<SyncCubit, SyncState>(
