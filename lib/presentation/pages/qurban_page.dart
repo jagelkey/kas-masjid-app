@@ -155,15 +155,32 @@ class _QurbanPageState extends State<QurbanPage> {
     }
   }
 
-  void _generatePdf(BuildContext context, QurbanLoaded state) {
+  Future<void> _generatePdf(BuildContext context, QurbanLoaded state) async {
     final profileState = context.read<ProfileBloc>().state;
     final profile = profileState is ProfileLoaded ? profileState.profile : null;
-    getIt<PdfService>().generateQurbanReport(
-      progress: state.filteredProgress,
-      summary: QurbanSummary.fromProgress(state.filteredProgress),
-      profile: profile,
-      period: 'Progress Iuran Qurban',
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Menyiapkan laporan PDF...'),
+        duration: Duration(seconds: 2),
+      ),
     );
+    try {
+      await getIt<PdfService>().generateQurbanReport(
+        progress: state.filteredProgress,
+        summary: QurbanSummary.fromProgress(state.filteredProgress),
+        profile: profile,
+        period: 'Progress Iuran Qurban',
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Gagal membuat PDF: $e'),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
   }
 }
 

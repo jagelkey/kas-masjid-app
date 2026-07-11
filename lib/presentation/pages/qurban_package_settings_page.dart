@@ -67,6 +67,7 @@ class QurbanPackageSettingsPage extends StatelessWidget {
       text: package?.monthlyAmount.toStringAsFixed(0) ?? '',
     );
     var isActive = package?.isActive ?? true;
+    String? errorText;
 
     showDialog(
       context: context,
@@ -98,6 +99,19 @@ class QurbanPackageSettingsPage extends StatelessWidget {
                   title: const Text('Aktif'),
                   onChanged: (value) => setState(() => isActive = value),
                 ),
+                if (errorText != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      errorText!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
             actions: [
@@ -118,10 +132,21 @@ class QurbanPackageSettingsPage extends StatelessWidget {
               FilledButton(
                 onPressed: () {
                   final amount = double.tryParse(amountController.text);
-                  if (nameController.text.trim().isEmpty ||
-                      amount == null ||
-                      amount <= 0 ||
-                      amount > 50000000) {
+                  final name = nameController.text.trim();
+                  if (name.isEmpty) {
+                    setState(
+                      () => errorText = 'Nama paket tidak boleh kosong.',
+                    );
+                    return;
+                  }
+                  if (amount == null || amount <= 0) {
+                    setState(() => errorText = 'Nominal harus lebih dari 0.');
+                    return;
+                  }
+                  if (amount > 50000000) {
+                    setState(
+                      () => errorText = 'Nominal maksimal Rp 50.000.000.',
+                    );
                     return;
                   }
 

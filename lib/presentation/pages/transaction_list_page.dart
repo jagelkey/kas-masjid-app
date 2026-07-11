@@ -25,7 +25,7 @@ class TransactionListPage extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.picture_as_pdf),
-            onPressed: () {
+            onPressed: () async {
               final state = context.read<TransactionBloc>().state;
               if (state is TransactionLoaded) {
                 final transactions = state.filteredTransactions;
@@ -74,14 +74,33 @@ class TransactionListPage extends StatelessWidget {
                     ? profileState.profile
                     : null;
 
-                getIt<PdfService>().generateReport(
-                  transactions: transactions,
-                  period: period,
-                  totalIncome: totalIncome,
-                  totalExpense: totalExpense,
-                  profile: profile,
-                  title: 'Laporan Transaksi',
+                // Fire-and-forget before: a failed font/logo fetch or a device
+                // without a print service left the user tapping with no result.
+                final messenger = ScaffoldMessenger.of(context);
+                final errorColor = Theme.of(context).colorScheme.error;
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Menyiapkan laporan PDF...'),
+                    duration: Duration(seconds: 2),
+                  ),
                 );
+                try {
+                  await getIt<PdfService>().generateReport(
+                    transactions: transactions,
+                    period: period,
+                    totalIncome: totalIncome,
+                    totalExpense: totalExpense,
+                    profile: profile,
+                    title: 'Laporan Transaksi',
+                  );
+                } catch (e) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Gagal membuat PDF: $e'),
+                      backgroundColor: errorColor,
+                    ),
+                  );
+                }
               }
             },
           ),

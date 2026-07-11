@@ -10,7 +10,6 @@ import 'package:masjid_app/domain/entities/transaction.dart';
 import 'package:masjid_app/presentation/pages/transaction_form_page.dart';
 import 'package:masjid_app/presentation/pages/transaction_list_page.dart';
 import 'package:masjid_app/presentation/pages/login_page.dart';
-import 'package:masjid_app/presentation/pages/register_page.dart';
 import 'package:masjid_app/presentation/pages/register_mosque_page.dart';
 import 'package:masjid_app/core/constants/env.dart';
 
@@ -78,7 +77,7 @@ bool Function(UserRole)? _permissionForPath(String path) {
 }
 
 // The only routes reachable without an authenticated session.
-const _authPaths = {'/login', '/register', '/register-mosque'};
+const _authPaths = {'/login', '/register-mosque'};
 
 // Returns a redirect target if `path` is role-restricted and the current
 // role (from globalAuthNotifier) doesn't pass, otherwise null (allow).
@@ -144,11 +143,6 @@ final appRouter = GoRouter(
       path: '/login',
       name: 'login',
       builder: (context, state) => const LoginPage(),
-    ),
-    GoRoute(
-      path: '/register',
-      name: 'register',
-      builder: (context, state) => const RegisterPage(),
     ),
     GoRoute(
       path: '/register-mosque',
