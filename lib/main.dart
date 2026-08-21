@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -18,10 +21,53 @@ import 'package:masjid_app/presentation/blocs/sync/sync_cubit.dart';
 import 'package:masjid_app/domain/repositories/mosque_profile_repository.dart';
 import 'package:masjid_app/core/constants/env.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await _bootstrapApp();
-  runApp(const MyApp());
+void main() {
+  // runZonedGuarded + the framework error hooks below make uncaught errors
+  // observable instead of silently vanishing in release. This app runs a
+  // background sync engine and several fire-and-forget futures (e.g. PDF
+  // export) that can throw; without this, those failures leave no trace.
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+
+      final previousOnError = FlutterError.onError;
+      FlutterError.onError = (details) {
+        previousOnError?.call(details);
+        debugPrint('FlutterError: ${details.exceptionAsString()}');
+      };
+
+      if (kReleaseMode) {
+        // Calm fallback instead of the raw red error screen in production.
+        ErrorWidget.builder = (details) => const Directionality(
+          textDirection: TextDirection.ltr,
+          child: ColoredBox(
+            color: Color(0xFFF7F7F5),
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Terjadi kesalahan pada tampilan. Silakan mulai ulang aplikasi.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFF333333)),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+        debugPrint('Uncaught platform error: $error\n$stack');
+        return true;
+      };
+
+      await _bootstrapApp();
+      runApp(const MyApp());
+    },
+    (error, stack) {
+      debugPrint('Uncaught zone error: $error\n$stack');
+    },
+  );
 }
 
 Future<void> _bootstrapApp() async {

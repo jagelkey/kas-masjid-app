@@ -238,6 +238,8 @@ class SyncService {
       return SyncResult.failure(['Sync disabled (Offline Mode)']);
     }
 
+    // Set _isSyncing INSIDE the try block so pre-check exceptions above
+    // don't leave the flag stuck as true (which would deadlock all future syncs).
     _isSyncing = true;
     _isSyncingController.add(true);
     final allErrors = <String>[];
@@ -465,12 +467,17 @@ class SyncService {
               updatedAt: Value(DateTime.tryParse(response['updated_at'] ?? '')),
             ),
           );
-        } else if (t.syncStatus == domain.SyncStatus.pendingDelete &&
-            t.remoteId != null) {
-          await _supabase!
-              .from('transactions')
-              .update(_deletedAtPayload())
-              .eq('id', t.remoteId!);
+        } else if (t.syncStatus == domain.SyncStatus.pendingDelete) {
+          if (t.remoteId != null) {
+            // Has remote record: soft-delete on server so other devices see the tombstone.
+            await _supabase!
+                .from('transactions')
+                .update(_deletedAtPayload())
+                .eq('id', t.remoteId!);
+          }
+          // Whether remote exists or not, remove the local row.
+          // A pendingDelete with no remoteId was created and deleted offline —
+          // there's nothing to sync, just clean up locally.
           await (_db.delete(
             _db.transactions,
           )..where((r) => r.id.equals(t.id))).go();
@@ -1098,7 +1105,10 @@ class SyncService {
           _db.qurbanParticipants,
         )..where((t) => t.id.equals(payment.participantId))).getSingleOrNull();
         if (participant?.remoteId == null) {
-          throw Exception('Peserta belum tersinkron');
+          throw Exception(
+            'Peserta "${participant?.name ?? 'ID ${payment.participantId}'}" '
+            'belum tersinkron. Tunggu sync selesai atau hubungkan ke internet.',
+          );
         }
 
         TransactionEntity? transaction;
@@ -1109,7 +1119,10 @@ class SyncService {
                   .getSingleOrNull();
         }
         if (transaction?.remoteId == null) {
-          throw Exception('Transaksi kas qurban belum tersinkron');
+          throw Exception(
+            'Transaksi kas qurban untuk pembayaran ini belum tersinkron. '
+            'Tunggu sync transaksi selesai.',
+          );
         }
 
         final remoteId = payment.remoteId ?? const Uuid().v4();
@@ -1417,17 +1430,28 @@ class SyncService {
     // Deletes, batched the same way.
     final toDelete = pending
         .where(
-          (a) =>
-              a.syncStatus == domain.SyncStatus.pendingDelete &&
-              a.remoteId != null,
+          (a) => a.syncStatus == domain.SyncStatus.pendingDelete,
         )
         .toList();
 
-    for (var i = 0; i < toDelete.length; i += chunkSize) {
-      final end = (i + chunkSize < toDelete.length)
+    // Separate into items that need server soft-delete (have remoteId)
+    // and items that only need local cleanup (no remoteId).
+    final toDeleteRemote = toDelete.where((a) => a.remoteId != null).toList();
+    final toDeleteLocalOnly =
+        toDelete.where((a) => a.remoteId == null).toList();
+
+    // Clean up local-only records immediately (nothing to sync).
+    for (final a in toDeleteLocalOnly) {
+      await (_db.delete(
+        _db.activities,
+      )..where((r) => r.id.equals(a.id))).go();
+    }
+
+    for (var i = 0; i < toDeleteRemote.length; i += chunkSize) {
+      final end = (i + chunkSize < toDeleteRemote.length)
           ? i + chunkSize
-          : toDelete.length;
-      final chunk = toDelete.sublist(i, end);
+          : toDeleteRemote.length;
+      final chunk = toDeleteRemote.sublist(i, end);
       final ids = chunk.map((a) => a.remoteId!).toList();
 
       try {
@@ -2040,21 +2064,34 @@ class SyncService {
 
     try {
       if (kIsWeb) {
-        // On Web, we want to rethrow the exception so _pushTransactions can catch it
-        // and abort the sync for this transaction (retry later).
-        final bundle = NetworkAssetBundle(Uri.parse(path));
-        final data = await bundle.load(path);
-        final bytes = data.buffer.asUint8List();
+        // On Web, proof images are stored as Blob URLs or asset paths.
+        // NetworkAssetBundle only works for app-bundled assets, not filesystem
+        // paths. For web, we read the file bytes via html HttpRequest or
+        // skip if the path is a local filesystem path (not uploadable from web).
+        //
+        // If the path looks like a blob URL or data URL, try to fetch it.
+        // Otherwise, log a warning and return null (will be retried on next sync).
+        if (path.startsWith('blob:') || path.startsWith('data:')) {
+          // Blob/data URLs can be fetched via network
+          final bundle = NetworkAssetBundle(Uri.parse(path));
+          final data = await bundle.load(path);
+          final bytes = data.buffer.asUint8List();
 
-        await supabase.storage
-            .from(bucket)
-            .uploadBinary(
-              fileName,
-              bytes,
-              fileOptions: const FileOptions(upsert: true),
-            );
-        final publicUrl = supabase.storage.from(bucket).getPublicUrl(fileName);
-        return publicUrl;
+          await supabase.storage
+              .from(bucket)
+              .uploadBinary(
+                fileName,
+                bytes,
+                fileOptions: const FileOptions(upsert: true),
+              );
+          final publicUrl = supabase.storage.from(bucket).getPublicUrl(fileName);
+          return publicUrl;
+        }
+        // Local filesystem paths are not accessible from web context.
+        debugPrint(
+          'Warning: Cannot upload local file from web context: $path',
+        );
+        return null;
       } else {
         final file = File(path);
         if (!await file.exists()) {
