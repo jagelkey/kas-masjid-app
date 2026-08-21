@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:injectable/injectable.dart';
@@ -20,15 +21,47 @@ class AuthLocalDatasource {
 
   static const _keyEmail = 'auth_email';
   static const _keyPasswordHash = 'auth_password_hash';
+  static const _keyPasswordSalt = 'auth_password_salt';
   static const _keyRole = 'auth_role';
   static const _keyUserId = 'auth_user_id';
   static const _keyUserMetadata = 'auth_user_metadata';
   static const _keyUsernameToEmail = 'auth_username_to_email';
   static const _keyPendingPassword = 'auth_pending_password';
-  static const _keyOnlinePassword = 'auth_online_password';
+
+  // Iteration count for the PBKDF2 KDF below. Chosen as a middle ground for
+  // budget Android devices this app targets: a few tens to low hundreds of
+  // milliseconds per login, while being orders of magnitude slower to
+  // brute-force offline than the single-round HMAC it replaces.
+  static const _pbkdf2Iterations = 100000;
 
   // Helper to generate unique key for each user
   String _getUserKey(String identifier, String key) => '${key}_$identifier';
+
+  String _generateSaltB64() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    return base64Encode(bytes);
+  }
+
+  // PBKDF2-HMAC-SHA256, single block (32-byte output fits SHA-256's block
+  // size exactly, so no multi-block concatenation is needed).
+  List<int> _pbkdf2(String password, List<int> salt, int iterations) {
+    final hmac = Hmac(sha256, utf8.encode(password));
+    var u = hmac.convert([...salt, 0, 0, 0, 1]).bytes;
+    final result = List<int>.from(u);
+    for (var i = 1; i < iterations; i++) {
+      u = hmac.convert(u).bytes;
+      for (var j = 0; j < result.length; j++) {
+        result[j] ^= u[j];
+      }
+    }
+    return result;
+  }
+
+  String _hashPasswordWithSalt(String password, String saltB64) {
+    final derived = _pbkdf2(password, base64Decode(saltB64), _pbkdf2Iterations);
+    return base64Encode(derived);
+  }
 
   Future<String?> getLastUserId() async {
     final email = await _storage.read(key: _keyEmail);
@@ -40,6 +73,14 @@ class AuthLocalDatasource {
     await _storage.write(key: _keyEmail, value: email.toLowerCase());
   }
 
+  /// Stores the offline-login credentials for [email].
+  ///
+  /// [markAsLastLoggedIn] must be false when an admin provisions an account for
+  /// SOMEONE ELSE. It controls the single `_keyEmail` pointer that
+  /// [getLastLoggedInUser] reads, so leaving it true made the admin's own
+  /// device "become" the account they had just created: after the next restart,
+  /// CheckAuthStatus restored that user instead, silently dropping the admin to
+  /// whatever role the new account had.
   Future<void> saveCredentials({
     required String email,
     required String password,
@@ -47,17 +88,21 @@ class AuthLocalDatasource {
     required String userId,
     required Map<String, dynamic> metadata,
     String? username,
+    bool markAsLastLoggedIn = true,
   }) async {
     final normalizedEmail = email.toLowerCase();
     final normalizedUsername = username?.toLowerCase();
 
-    // Use userId as salt for hashing
-    final hmacSha256 = Hmac(sha256, utf8.encode(userId));
-    final hash = hmacSha256.convert(utf8.encode(password)).toString();
+    final salt = _generateSaltB64();
+    final hash = _hashPasswordWithSalt(password, salt);
 
     await _storage.write(
       key: _getUserKey(normalizedEmail, _keyPasswordHash),
       value: hash,
+    );
+    await _storage.write(
+      key: _getUserKey(normalizedEmail, _keyPasswordSalt),
+      value: salt,
     );
     await _storage.write(
       key: _getUserKey(normalizedEmail, _keyRole),
@@ -79,7 +124,9 @@ class AuthLocalDatasource {
       );
     }
 
-    await _storage.write(key: _keyEmail, value: normalizedEmail);
+    if (markAsLastLoggedIn) {
+      await _storage.write(key: _keyEmail, value: normalizedEmail);
+    }
   }
 
   Future<void> updateProfile({
@@ -109,15 +156,18 @@ class AuthLocalDatasource {
 
     // 1. Handle Password Transfer/Update
     if (newPassword != null) {
-      final hmacSha256 = Hmac(sha256, utf8.encode(userId));
-      final hash = hmacSha256.convert(utf8.encode(newPassword)).toString();
+      final salt = _generateSaltB64();
+      final hash = _hashPasswordWithSalt(newPassword, salt);
       await _storage.write(
         key: _getUserKey(normalizedEmail, _keyPasswordHash),
         value: hash,
       );
-      await saveOnlinePassword(email: normalizedEmail, password: newPassword);
+      await _storage.write(
+        key: _getUserKey(normalizedEmail, _keyPasswordSalt),
+        value: salt,
+      );
     } else if (newEmail != null && normalizedEmail != normalizedCurrentEmail) {
-      // Copy old hash to new key
+      // Copy old hash + salt to new key
       final oldHash = await _storage.read(
         key: _getUserKey(normalizedCurrentEmail, _keyPasswordHash),
       );
@@ -127,12 +177,13 @@ class AuthLocalDatasource {
           value: oldHash,
         );
       }
-
-      final oldOnlinePassword = await getOnlinePassword(normalizedCurrentEmail);
-      if (oldOnlinePassword != null) {
-        await saveOnlinePassword(
-          email: normalizedEmail,
-          password: oldOnlinePassword,
+      final oldSalt = await _storage.read(
+        key: _getUserKey(normalizedCurrentEmail, _keyPasswordSalt),
+      );
+      if (oldSalt != null) {
+        await _storage.write(
+          key: _getUserKey(normalizedEmail, _keyPasswordSalt),
+          value: oldSalt,
         );
       }
     }
@@ -170,6 +221,9 @@ class AuthLocalDatasource {
       await _storage.delete(
         key: _getUserKey(normalizedCurrentEmail, _keyPasswordHash),
       );
+      await _storage.delete(
+        key: _getUserKey(normalizedCurrentEmail, _keyPasswordSalt),
+      );
       await _storage.delete(key: _getUserKey(normalizedCurrentEmail, _keyRole));
       await _storage.delete(
         key: _getUserKey(normalizedCurrentEmail, _keyUserId),
@@ -177,7 +231,6 @@ class AuthLocalDatasource {
       await _storage.delete(
         key: _getUserKey(normalizedCurrentEmail, _keyUserMetadata),
       );
-      await deleteOnlinePassword(normalizedCurrentEmail);
     }
 
     // 4. Handle Username Mapping
@@ -202,28 +255,6 @@ class AuthLocalDatasource {
     await _storage.write(
       key: _getUserKey(userId, _keyPendingPassword),
       value: password,
-    );
-  }
-
-  Future<void> saveOnlinePassword({
-    required String email,
-    required String password,
-  }) async {
-    await _storage.write(
-      key: _getUserKey(email.toLowerCase(), _keyOnlinePassword),
-      value: password,
-    );
-  }
-
-  Future<String?> getOnlinePassword(String email) async {
-    return _storage.read(
-      key: _getUserKey(email.toLowerCase(), _keyOnlinePassword),
-    );
-  }
-
-  Future<void> deleteOnlinePassword(String email) async {
-    await _storage.delete(
-      key: _getUserKey(email.toLowerCase(), _keyOnlinePassword),
     );
   }
 
@@ -261,32 +292,54 @@ class AuthLocalDatasource {
     }
 
     final userId = await _storage.read(key: _getUserKey(email, _keyUserId));
-    final salt = userId ?? email; // Fallback to email if userId is missing
+    final storedSalt = await _storage.read(
+      key: _getUserKey(email, _keyPasswordSalt),
+    );
 
-    final hmacSha256 = Hmac(sha256, utf8.encode(salt));
-    final saltedHash = hmacSha256.convert(utf8.encode(password)).toString();
-    final unsaltedHash = sha256.convert(utf8.encode(password)).toString();
+    bool matched;
+    if (storedSalt != null) {
+      // Current scheme: PBKDF2-HMAC-SHA256 with a random per-user salt.
+      matched = storedHash == _hashPasswordWithSalt(password, storedSalt);
+    } else {
+      // Legacy schemes (HMAC-SHA256 keyed by the non-secret userId, or
+      // even older unsalted SHA-256) -- verify against those, then
+      // transparently upgrade to the new PBKDF2 scheme on success so
+      // returning users migrate off the weaker hash without needing an
+      // explicit password reset.
+      final legacySalt = userId ?? email;
+      final saltedHash = Hmac(
+        sha256,
+        utf8.encode(legacySalt),
+      ).convert(utf8.encode(password)).toString();
+      final unsaltedHash = sha256.convert(utf8.encode(password)).toString();
+      matched = storedHash == saltedHash || storedHash == unsaltedHash;
 
-    if (storedHash == saltedHash || storedHash == unsaltedHash) {
-      if (storedHash == unsaltedHash) {
+      if (matched) {
+        final newSalt = _generateSaltB64();
         await _storage.write(
           key: _getUserKey(email, _keyPasswordHash),
-          value: saltedHash,
+          value: _hashPasswordWithSalt(password, newSalt),
+        );
+        await _storage.write(
+          key: _getUserKey(email, _keyPasswordSalt),
+          value: newSalt,
         );
       }
-      final roleStr = await _storage.read(key: _getUserKey(email, _keyRole));
-      final metadataStr = await _storage.read(
-        key: _getUserKey(email, _keyUserMetadata),
-      );
-
-      return LocalUser(
-        id: userId ?? 'offline_user',
-        email: email,
-        role: _parseRole(roleStr),
-        metadata: metadataStr != null ? jsonDecode(metadataStr) : {},
-      );
     }
-    return null;
+
+    if (!matched) return null;
+
+    final roleStr = await _storage.read(key: _getUserKey(email, _keyRole));
+    final metadataStr = await _storage.read(
+      key: _getUserKey(email, _keyUserMetadata),
+    );
+
+    return LocalUser(
+      id: userId ?? 'offline_user',
+      email: email,
+      role: _parseRole(roleStr),
+      metadata: metadataStr != null ? jsonDecode(metadataStr) : {},
+    );
   }
 
   Future<String?> getEmailByUsername(String username) async {
@@ -326,6 +379,21 @@ class AuthLocalDatasource {
       );
     }
     return null;
+  }
+
+  /// The last SERVER-CONFIRMED role for [email], as written by
+  /// [saveCredentials] / [saveStoredRole]. This is the offline fallback for
+  /// authorization decisions -- never `user_metadata`, which the account holder
+  /// can rewrite at will through `auth.updateUser()`.
+  Future<String?> getStoredRole(String email) {
+    return _storage.read(key: _getUserKey(email.toLowerCase(), _keyRole));
+  }
+
+  Future<void> saveStoredRole(String email, String role) {
+    return _storage.write(
+      key: _getUserKey(email.toLowerCase(), _keyRole),
+      value: role,
+    );
   }
 
   Future<LocalUser?> getLastLoggedInUser() async {

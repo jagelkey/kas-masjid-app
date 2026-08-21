@@ -14,9 +14,19 @@ class MosqueProfileRepositoryImpl implements MosqueProfileRepository {
 
   MosqueProfileRepositoryImpl(this._db, this._auditLogRepository);
 
+  // Defensive: order + limit(1) instead of a throwing getSingleOrNull(), in
+  // case a pre-fix duplicate row still exists on this device (see
+  // saveProfile below for why there used to be a race that could create one).
+  Future<MosqueProfileEntity?> _getFirstRow() {
+    return (_db.select(_db.mosqueProfiles)
+          ..orderBy([(t) => OrderingTerm.asc(t.id)])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
   @override
   Future<domain.MosqueProfile?> getProfile() async {
-    final row = await _db.select(_db.mosqueProfiles).getSingleOrNull();
+    final row = await _getFirstRow();
     if (row == null) return null;
 
     // Logic to separate local path and remote URL stored in the same column
@@ -42,50 +52,64 @@ class MosqueProfileRepositoryImpl implements MosqueProfileRepository {
 
   @override
   Future<void> saveProfile(domain.MosqueProfile profile) async {
-    // Upsert logic (since only 1 row)
-    final existing = await _db.select(_db.mosqueProfiles).getSingleOrNull();
-
     // Determine what to save in logoPath column
     // If local path exists, save it (it will be uploaded later).
     // If only URL exists, save URL.
     final pathOrUrl = profile.logoPath ?? profile.logoUrl;
 
-    if (existing != null) {
-      await (_db.update(
-        _db.mosqueProfiles,
-      )..where((t) => t.id.equals(existing.id))).write(
-        MosqueProfilesCompanion(
-          name: Value(profile.name),
-          address: Value(profile.address),
-          logoPath: Value(pathOrUrl),
-          syncStatus: Value(domain_status.SyncStatus.pendingUpdate),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
+    // Upsert logic (since only 1 row is expected). Wrapped in a single DB
+    // transaction so two near-simultaneous saves (double-tap, retry after a
+    // timeout) can't both see "no row yet" and both insert -- Drift
+    // serializes concurrent transactions against this database, so the
+    // second call always sees the first one's write before deciding.
+    await _db.transaction(() async {
+      final existing = await _getFirstRow();
 
-      await _auditLogRepository.logActivity(
-        action: 'UPDATE',
-        targetTable: 'mosque_profiles',
-        recordId: existing.id.toString(),
-        description: 'Updated Profile: ${profile.name}',
-      );
-    } else {
-      await _db
-          .into(_db.mosqueProfiles)
-          .insert(
-            MosqueProfilesCompanion(
-              name: Value(profile.name),
-              address: Value(profile.address),
-              logoPath: Value(pathOrUrl),
-              syncStatus: Value(domain_status.SyncStatus.pendingCreate),
-            ),
-          );
+      if (existing != null) {
+        // If this row was never synced yet (still pendingCreate), keep it
+        // pendingCreate rather than flipping to pendingUpdate -- otherwise
+        // the push logic (which currently branches on remoteId presence
+        // rather than this status) stays correct even if it's ever
+        // refactored to branch on syncStatus like the other repositories.
+        final nextStatus = existing.syncStatus == domain_status.SyncStatus.pendingCreate
+            ? domain_status.SyncStatus.pendingCreate
+            : domain_status.SyncStatus.pendingUpdate;
+        await (_db.update(
+          _db.mosqueProfiles,
+        )..where((t) => t.id.equals(existing.id))).write(
+          MosqueProfilesCompanion(
+            name: Value(profile.name),
+            address: Value(profile.address),
+            logoPath: Value(pathOrUrl),
+            syncStatus: Value(nextStatus),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
 
-      await _auditLogRepository.logActivity(
-        action: 'CREATE',
-        targetTable: 'mosque_profiles',
-        description: 'Created Profile: ${profile.name}',
-      );
-    }
+        await _auditLogRepository.logActivity(
+          action: 'UPDATE',
+          targetTable: 'mosque_profiles',
+          recordId: existing.id.toString(),
+          description: 'Updated Profile: ${profile.name}',
+        );
+      } else {
+        await _db
+            .into(_db.mosqueProfiles)
+            .insert(
+              MosqueProfilesCompanion(
+                name: Value(profile.name),
+                address: Value(profile.address),
+                logoPath: Value(pathOrUrl),
+                syncStatus: Value(domain_status.SyncStatus.pendingCreate),
+              ),
+            );
+
+        await _auditLogRepository.logActivity(
+          action: 'CREATE',
+          targetTable: 'mosque_profiles',
+          description: 'Created Profile: ${profile.name}',
+        );
+      }
+    });
   }
 }

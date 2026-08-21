@@ -75,6 +75,7 @@ serve(async (req) => {
   if (!allowedRoles.has(callerProfile?.role ?? "")) {
     return jsonResponse({ success: false, error: "Access denied" }, 403);
   }
+  const callerRole = callerProfile?.role ?? "";
 
   let body: RequestBody;
   try {
@@ -94,6 +95,15 @@ serve(async (req) => {
         return jsonResponse(
           { success: false, error: "email, password, and full_name are required" },
           400,
+        );
+      }
+
+      // Only an admin may create an admin account (ketua is blocked to keep
+      // the single-bootstrap-admin model intact).
+      if (role === "admin" && callerRole !== "admin") {
+        return jsonResponse(
+          { success: false, error: "Only an admin can create an admin account" },
+          403,
         );
       }
 
@@ -129,6 +139,25 @@ serve(async (req) => {
     if (body.action === "update") {
       if (!body.user_id) {
         return jsonResponse({ success: false, error: "user_id is required" }, 400);
+      }
+
+      // A ketua may not grant admin, nor modify/demote an existing admin.
+      if (callerRole !== "admin") {
+        const { data: targetProfile } = await admin
+          .from("profiles")
+          .select("role")
+          .eq("id", body.user_id)
+          .maybeSingle();
+        const targetRole = targetProfile?.role ?? "";
+        if (role === "admin" || targetRole === "admin") {
+          return jsonResponse(
+            {
+              success: false,
+              error: "Only an admin can grant or modify an admin account",
+            },
+            403,
+          );
+        }
       }
 
       const attributes: Record<string, unknown> = {
@@ -170,6 +199,21 @@ serve(async (req) => {
     if (body.action === "delete") {
       if (!body.user_id) {
         return jsonResponse({ success: false, error: "user_id is required" }, 400);
+      }
+
+      // A ketua may not delete an admin account.
+      if (callerRole !== "admin") {
+        const { data: targetProfile } = await admin
+          .from("profiles")
+          .select("role")
+          .eq("id", body.user_id)
+          .maybeSingle();
+        if ((targetProfile?.role ?? "") === "admin") {
+          return jsonResponse(
+            { success: false, error: "Only an admin can delete an admin account" },
+            403,
+          );
+        }
       }
 
       await admin.from("profiles").delete().eq("id", body.user_id);

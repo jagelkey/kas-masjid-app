@@ -102,6 +102,9 @@ class _QurbanPaymentFormPageState extends State<QurbanPaymentFormPage> {
                     if (amount == null || amount <= 0) {
                       return 'Nominal wajib lebih dari 0';
                     }
+                    if (amount > 1000000000) {
+                      return 'Nominal terlalu besar, periksa kembali angkanya';
+                    }
                     return null;
                   },
                 ),

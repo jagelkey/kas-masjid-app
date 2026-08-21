@@ -223,6 +223,7 @@ class MockAuthLocalDatasource extends _i1.Mock
     required String? userId,
     required Map<String, dynamic>? metadata,
     String? username,
+    bool? markAsLastLoggedIn = true,
   }) =>
       (super.noSuchMethod(
             Invocation.method(#saveCredentials, [], {
@@ -232,6 +233,7 @@ class MockAuthLocalDatasource extends _i1.Mock
               #userId: userId,
               #metadata: metadata,
               #username: username,
+              #markAsLastLoggedIn: markAsLastLoggedIn,
             }),
             returnValue: _i5.Future<void>.value(),
             returnValueForMissingStub: _i5.Future<void>.value(),
@@ -273,38 +275,6 @@ class MockAuthLocalDatasource extends _i1.Mock
           as _i5.Future<void>);
 
   @override
-  _i5.Future<void> saveOnlinePassword({
-    required String? email,
-    required String? password,
-  }) =>
-      (super.noSuchMethod(
-            Invocation.method(#saveOnlinePassword, [], {
-              #email: email,
-              #password: password,
-            }),
-            returnValue: _i5.Future<void>.value(),
-            returnValueForMissingStub: _i5.Future<void>.value(),
-          )
-          as _i5.Future<void>);
-
-  @override
-  _i5.Future<String?> getOnlinePassword(String? email) =>
-      (super.noSuchMethod(
-            Invocation.method(#getOnlinePassword, [email]),
-            returnValue: _i5.Future<String?>.value(),
-          )
-          as _i5.Future<String?>);
-
-  @override
-  _i5.Future<void> deleteOnlinePassword(String? email) =>
-      (super.noSuchMethod(
-            Invocation.method(#deleteOnlinePassword, [email]),
-            returnValue: _i5.Future<void>.value(),
-            returnValueForMissingStub: _i5.Future<void>.value(),
-          )
-          as _i5.Future<void>);
-
-  @override
   _i5.Future<String?> getPendingUserPassword(String? userId) =>
       (super.noSuchMethod(
             Invocation.method(#getPendingUserPassword, [userId]),
@@ -339,6 +309,23 @@ class MockAuthLocalDatasource extends _i1.Mock
             returnValue: _i5.Future<String?>.value(),
           )
           as _i5.Future<String?>);
+
+  @override
+  _i5.Future<String?> getStoredRole(String? email) =>
+      (super.noSuchMethod(
+            Invocation.method(#getStoredRole, [email]),
+            returnValue: _i5.Future<String?>.value(),
+          )
+          as _i5.Future<String?>);
+
+  @override
+  _i5.Future<void> saveStoredRole(String? email, String? role) =>
+      (super.noSuchMethod(
+            Invocation.method(#saveStoredRole, [email, role]),
+            returnValue: _i5.Future<void>.value(),
+            returnValueForMissingStub: _i5.Future<void>.value(),
+          )
+          as _i5.Future<void>);
 
   @override
   _i5.Future<_i6.LocalUser?> getLastLoggedInUser() =>

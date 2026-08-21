@@ -47,25 +47,30 @@ class ActivityRepositoryImpl implements ActivityRepository {
 
   @override
   Future<void> addActivity(domain.Activity activity) async {
-    await _db
-        .into(_db.activities)
-        .insert(
-          ActivitiesCompanion(
-            remoteId: Value(activity.remoteId),
-            title: Value(activity.title),
-            description: Value(activity.description),
-            type: Value(activity.type),
-            date: Value(activity.date),
-            picName: Value(activity.picName),
-            syncStatus: Value(domain_status.SyncStatus.pendingCreate),
-          ),
-        );
+    // Wrapped in a transaction so the audit trail entry can never be lost
+    // (or the write silently un-recorded) if the app is killed between the
+    // two statements.
+    await _db.transaction(() async {
+      await _db
+          .into(_db.activities)
+          .insert(
+            ActivitiesCompanion(
+              remoteId: Value(activity.remoteId),
+              title: Value(activity.title),
+              description: Value(activity.description),
+              type: Value(activity.type),
+              date: Value(activity.date),
+              picName: Value(activity.picName),
+              syncStatus: Value(domain_status.SyncStatus.pendingCreate),
+            ),
+          );
 
-    await _auditLogRepository.logActivity(
-      action: 'CREATE',
-      targetTable: 'activities',
-      description: 'Activity: ${activity.title} (${activity.type})',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'CREATE',
+        targetTable: 'activities',
+        description: 'Activity: ${activity.title} (${activity.type})',
+      );
+    });
   }
 
   @override
@@ -84,26 +89,28 @@ class ActivityRepositoryImpl implements ActivityRepository {
         ? domain_status.SyncStatus.pendingCreate
         : domain_status.SyncStatus.pendingUpdate;
 
-    await (_db.update(
-      _db.activities,
-    )..where((t) => t.id.equals(activity.id!))).write(
-      ActivitiesCompanion(
-        title: Value(activity.title),
-        description: Value(activity.description),
-        type: Value(activity.type),
-        date: Value(activity.date),
-        picName: Value(activity.picName),
-        syncStatus: Value(newSyncStatus),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
+    await _db.transaction(() async {
+      await (_db.update(
+        _db.activities,
+      )..where((t) => t.id.equals(activity.id!))).write(
+        ActivitiesCompanion(
+          title: Value(activity.title),
+          description: Value(activity.description),
+          type: Value(activity.type),
+          date: Value(activity.date),
+          picName: Value(activity.picName),
+          syncStatus: Value(newSyncStatus),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
 
-    await _auditLogRepository.logActivity(
-      action: 'UPDATE',
-      targetTable: 'activities',
-      recordId: activity.id.toString(),
-      description: 'Updated Activity: ${activity.title}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'UPDATE',
+        targetTable: 'activities',
+        recordId: activity.id.toString(),
+        description: 'Updated Activity: ${activity.title}',
+      );
+    });
   }
 
   @override
@@ -113,23 +120,27 @@ class ActivityRepositoryImpl implements ActivityRepository {
     )..where((t) => t.id.equals(id))).getSingleOrNull();
     if (activity == null) return;
 
-    if (activity.remoteId != null) {
-      await (_db.update(_db.activities)..where((t) => t.id.equals(id))).write(
-        ActivitiesCompanion(
-          syncStatus: Value(domain_status.SyncStatus.pendingDelete),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
-    } else {
-      await (_db.delete(_db.activities)..where((t) => t.id.equals(id))).go();
-    }
+    await _db.transaction(() async {
+      if (activity.remoteId != null) {
+        await (_db.update(
+          _db.activities,
+        )..where((t) => t.id.equals(id))).write(
+          ActivitiesCompanion(
+            syncStatus: Value(domain_status.SyncStatus.pendingDelete),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      } else {
+        await (_db.delete(_db.activities)..where((t) => t.id.equals(id))).go();
+      }
 
-    await _auditLogRepository.logActivity(
-      action: 'DELETE',
-      targetTable: 'activities',
-      recordId: id.toString(),
-      description: 'Deleted Activity: ${activity.title}',
-    );
+      await _auditLogRepository.logActivity(
+        action: 'DELETE',
+        targetTable: 'activities',
+        recordId: id.toString(),
+        description: 'Deleted Activity: ${activity.title}',
+      );
+    });
   }
 
   domain.Activity _mapToDomain(ActivityEntity row) {

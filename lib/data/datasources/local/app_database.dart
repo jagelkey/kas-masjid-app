@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:masjid_app/domain/entities/transaction.dart' as domain_status;
 
@@ -194,13 +195,21 @@ class AppDatabase extends _$AppDatabase {
       );
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onCreate: (Migrator m) async {
         await m.createAll();
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_remote_id_unique '
+          'ON transactions(remote_id) WHERE remote_id IS NOT NULL',
+        );
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_qurban_payments_remote_id_unique '
+          'ON qurban_payments(remote_id) WHERE remote_id IS NOT NULL',
+        );
       },
       onUpgrade: (Migrator m, int from, int to) async {
         // Migration steps...
@@ -209,7 +218,14 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(mosqueProfiles, mosqueProfiles.remoteId);
             await m.addColumn(mosqueProfiles, mosqueProfiles.syncStatus);
             await m.addColumn(mosqueProfiles, mosqueProfiles.updatedAt);
-          } catch (_) {}
+          } catch (e) {
+            // Logged rather than silently swallowed -- this is expected to
+            // fail with "duplicate column" on a device that already has
+            // these columns, but a genuinely different failure here would
+            // otherwise vanish with no trace and leave a column silently
+            // never added.
+            debugPrint('Migration step (from<2, mosqueProfiles columns): $e');
+          }
         }
         if (from < 3) {
           await m.createTable(users);
@@ -226,29 +242,45 @@ class AppDatabase extends _$AppDatabase {
               'proof_url',
               transactions.proofUrls,
             );
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('Migration step (from<4, rename proof columns): $e');
+          }
         }
         if (from < 5) {
           try {
             await m.addColumn(users, users.username);
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('Migration step (from<5, users.username): $e');
+          }
         }
         if (from < 6) {
           try {
             await m.addColumn(transactions, transactions.source);
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('Migration step (from<6, transactions.source): $e');
+          }
           try {
             await m.addColumn(transactions, transactions.sourceRef);
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('Migration step (from<6, transactions.sourceRef): $e');
+          }
           try {
             await m.createTable(qurbanPackages);
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('Migration step (from<6, qurbanPackages table): $e');
+          }
           try {
             await m.createTable(qurbanParticipants);
-          } catch (_) {}
+          } catch (e) {
+            debugPrint(
+              'Migration step (from<6, qurbanParticipants table): $e',
+            );
+          }
           try {
             await m.createTable(qurbanPayments);
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('Migration step (from<6, qurbanPayments table): $e');
+          }
         }
 
         // Ensure new tables are created during upgrade
@@ -257,13 +289,57 @@ class AppDatabase extends _$AppDatabase {
         // we can wrap createTable in try-catch or rely on Drift's createTable (which fails if exists)
         try {
           await m.createTable(auditLogs);
-        } catch (_) {
-          // Table likely already exists
+        } catch (e) {
+          // Table likely already exists -- logged in case it's something else.
+          debugPrint('Migration step (auditLogs table): $e');
+        }
+
+        if (from < 7) {
+          // Partial unique indexes (NULL remote_id is exempt, since a row
+          // not yet synced has none) guard against duplicate local rows
+          // for the same remote transaction/payment silently double
+          // counting money -- e.g. a push retried after a timeout where
+          // the server actually already succeeded, or a pull-merge bug.
+          // Wrapped in try/catch: if a device already has duplicate
+          // remote_id values from before this fix, creating the index
+          // fails on THAT device rather than blocking the app from
+          // opening; such duplicates need manual cleanup, which this
+          // migration intentionally does not attempt automatically.
+          try {
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_remote_id_unique '
+              'ON transactions(remote_id) WHERE remote_id IS NOT NULL',
+            );
+          } catch (e) {
+            debugPrint('Skipping transactions.remote_id unique index: $e');
+          }
+          try {
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_qurban_payments_remote_id_unique '
+              'ON qurban_payments(remote_id) WHERE remote_id IS NOT NULL',
+            );
+          } catch (e) {
+            debugPrint(
+              'Skipping qurban_payments.remote_id unique index: $e',
+            );
+          }
         }
       },
       beforeOpen: (details) async {
         await customStatement('PRAGMA foreign_keys = ON');
-        await _seedDefaultQurbanPackages();
+
+        // Seed only when this local database is brand new, or when the v6
+        // upgrade has just introduced the qurban tables. Seeding on every open
+        // (guarded only by "are there zero packages?") meant an admin who
+        // deliberately deleted every package got them silently recreated on the
+        // next app start -- and then re-pushed to the server, undoing the
+        // deletion for every other device too.
+        final versionBefore = details.versionBefore;
+        final qurbanTablesJustAdded =
+            details.hadUpgrade && versionBefore != null && versionBefore < 6;
+        if (details.wasCreated || qurbanTablesJustAdded) {
+          await _seedDefaultQurbanPackages();
+        }
       },
     );
   }

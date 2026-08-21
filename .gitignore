@@ -80,7 +80,13 @@ Thumbs.db
 # Sensitive files (auto-detected)
 .env
 build
-build_and_install.bat
-build_and_install.sh
+# build_and_install.bat / build_and_install.sh were listed here by the
+# auto-detector, but they hold no secrets: they READ .env and pass only
+# SUPABASE_URL + SUPABASE_ANON_KEY to --dart-define. Ignoring them meant the
+# only script that knows how to build a release APK which actually reaches the
+# backend lived on a single laptop -- a fresh clone had no script, ran a bare
+# `flutter build apk`, and silently shipped an offline-only app.
 flutter_01.log
-Masjid-app.apk (large file: 65MB)
+# "Masjid-app.apk (large file: 65MB)" was here, which is not a valid pattern --
+# the parenthetical made it match nothing. Ignore the real filename instead.
+Masjid-app.apk

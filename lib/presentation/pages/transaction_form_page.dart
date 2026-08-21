@@ -49,13 +49,25 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
     'Lainnya',
   ];
 
+  // amount.toString() renders a whole number as "250000.0". The old prefill
+  // stripped that with replaceAll('.0', ''), which deletes EVERY ".0" in the
+  // string, not just the trailing one -- so a decimal amount of 100.05 (which
+  // can arrive from the server, where amount is numeric) was prefilled as
+  // "10005" and saved back 100x too large.
+  static String _formatAmountForInput(double amount) {
+    if (amount == amount.roundToDouble() && amount.abs() < 1e15) {
+      return amount.toStringAsFixed(0);
+    }
+    return amount.toString();
+  }
+
   @override
   void initState() {
     super.initState();
     final t = widget.transaction;
     _type = t?.type ?? TransactionType.income;
     _amountController = TextEditingController(
-      text: t?.amount.toString().replaceAll('.0', '') ?? '',
+      text: t == null ? '' : _formatAmountForInput(t.amount),
     );
     _descriptionController = TextEditingController(text: t?.description ?? '');
     _selectedCategory = t?.category;
@@ -462,6 +474,12 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                     if (parsedAmount <= 0) {
                       return 'Nominal harus lebih dari 0';
                     }
+                    // Sanity ceiling against fat-fingered extra digits --
+                    // money is still stored as double with no DB-level
+                    // bound, so this is the one real backstop today.
+                    if (parsedAmount > 1000000000) {
+                      return 'Nominal terlalu besar, periksa kembali angkanya';
+                    }
                     return null;
                   },
                 ),
@@ -501,11 +519,17 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                 // Date
                 InkWell(
                   onTap: () async {
+                    final now = DateTime.now();
                     final picked = await showDatePicker(
                       context: context,
-                      initialDate: _selectedDate,
+                      // A cash transaction records money that has already
+                      // moved, so future dates aren't a valid entry -- they
+                      // used to silently count toward "today's" balance.
+                      initialDate: _selectedDate.isAfter(now)
+                          ? now
+                          : _selectedDate,
                       firstDate: DateTime(2020),
-                      lastDate: DateTime(2030),
+                      lastDate: now,
                     );
                     if (picked != null) {
                       setState(() {
@@ -586,6 +610,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   }
 
   void _submitForm() {
+    if (_isSubmitting) return;
     if (_formKey.currentState!.validate()) {
       // Robust parsing: replace comma with dot for decimal compatibility
       final cleanAmountText = _amountController.text.replaceAll(',', '.');

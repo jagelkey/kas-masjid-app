@@ -328,11 +328,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     // 2. Local DB Update (only if Supabase succeeded or offline)
     if (currentUserEntity != null) {
       try {
+        // If the online push above actually ran (authenticated + live client),
+        // the row is genuinely synced. If it was skipped because we're offline,
+        // mark it pendingUpdate so the edit is replayed on reconnect instead of
+        // being falsely marked synced and then overwritten on the next login.
+        final didOnlinePush =
+            _supabase != null && currentState is Authenticated;
         final updatedUser = currentUserEntity.copyWith(
           email: newEmail ?? currentUserEntity.email,
           username: newUsername ?? currentUserEntity.username,
           fullName: newFullName ?? currentUserEntity.fullName,
-          syncStatus: 0, // 0=synced
+          syncStatus: didOnlinePush ? 0 : 2, // 0=synced, 2=pendingUpdate
         );
         await _userRepository.updateUser(updatedUser);
       } catch (e) {
@@ -399,18 +405,68 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             password: event.password,
             data: {
               'full_name': event.name,
-              'role': event.role.toString().split('.').last,
               'username': normalizedUsername,
+              // NOTE: role is intentionally NOT sent here. The server-side
+              // handle_new_user() trigger always assigns 'viewer' and
+              // ignores any client-supplied role -- trusting it was a
+              // privilege-escalation hole (anyone could sign up as admin).
             },
           );
           user = response.user;
 
-          // Ensure role is set in public.profiles
-          if (user != null) {
-            await _supabase!
-                .from('profiles')
-                .update({'role': event.role.toString().split('.').last})
-                .eq('id', user.id);
+          // With Supabase "Confirm email" enabled, signUp returns a user but no
+          // session. Keying success off user != null then ran claim_first_admin
+          // unauthenticated (misleading "admin already exists" error) and
+          // emitted Authenticated with no session (the router bounces to /login
+          // and every sync fails "Not authenticated"). Stop with a clear message.
+          if (user != null && response.session == null) {
+            emit(
+              AuthError(
+                event.role == UserRole.admin
+                    ? 'Akun dibuat, tetapi email harus dikonfirmasi dulu. Cek '
+                          'inbox lalu login. Jika status admin belum aktif '
+                          'setelah login, nonaktifkan "Confirm email" di '
+                          'pengaturan Auth Supabase lalu daftar ulang.'
+                    : 'Registrasi berhasil. Konfirmasi email Anda (cek inbox), '
+                          'lalu login.',
+              ),
+            );
+            return;
+          }
+
+          if (user != null && event.role == UserRole.admin) {
+            // First-admin bootstrap (mosque registration screen). This is
+            // the ONLY path that can elevate a brand-new account above
+            // 'viewer', and it succeeds exactly once per project -- see
+            // claim_first_admin() in the database migrations.
+            try {
+              await _supabase!.rpc('claim_first_admin');
+            } catch (e) {
+              emit(
+                AuthError(
+                  'Masjid ini sudah memiliki admin terdaftar. Akun Anda '
+                  'tetap dibuat sebagai Viewer — silakan login, lalu minta '
+                  'admin masjid untuk mengubah role Anda.',
+                ),
+              );
+              return;
+            }
+
+            // Mirror the now server-confirmed role into user_metadata purely as
+            // a display cache for other tooling. Nothing in this app reads it
+            // for authorization any more: _resolveRole() goes to
+            // public.profiles.role, because any user can rewrite their own
+            // user_metadata via auth.updateUser(). Best-effort -- the claim
+            // itself already succeeded above regardless of this.
+            try {
+              await _supabase!.auth.updateUser(
+                UserAttributes(data: {'role': 'admin'}),
+              );
+            } catch (e) {
+              // Non-fatal: the claim itself already succeeded, so let
+              // registration continue normally below.
+              debugPrint('Failed to sync admin role into user_metadata: $e');
+            }
           }
         } catch (e) {
           debugPrint('Supabase registration failed: $e');
@@ -450,14 +506,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       // 3. Emit Authenticated
       if (user != null) {
-        await _localDatasource.saveOnlinePassword(
-          email: normalizedEmail,
-          password: event.password,
-        );
         globalAuthNotifier.setOffline(false);
+        globalAuthNotifier.setRole(role);
         emit(Authenticated(user, role: role));
       } else {
         globalAuthNotifier.setOffline(true);
+        globalAuthNotifier.setRole(role);
         emit(
           AuthOffline(
             LocalUser(
@@ -486,30 +540,32 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       if (_supabase != null) {
         final session = _supabase!.auth.currentSession;
         if (session != null) {
-          final role = _parseRole(session.user.userMetadata);
+          final role = await _resolveRole(session.user);
           globalAuthNotifier.setOffline(false);
+          globalAuthNotifier.setRole(role);
           emit(Authenticated(session.user, role: role));
           return;
         }
       }
 
-      // 2. Try Restore Offline Session
+      // 2. Fall back to the locally remembered session. We deliberately do
+      // NOT attempt a silent password-based re-login here: that used to
+      // work by keeping the user's real online password in secure storage
+      // indefinitely so it could be replayed against signInWithPassword,
+      // which meant a compromised device/keystore handed over the user's
+      // actual reusable password, not just a local hash. Supabase's own
+      // session persistence (backed by its refresh token) already restores
+      // `currentSession` above whenever it's still valid; if it isn't, the
+      // safe behavior is simply to stay in local/offline mode until the
+      // user explicitly logs in online again.
       final lastUser = await _localDatasource.getLastLoggedInUser();
       if (lastUser != null) {
-        final restoredSession = await _tryRestoreOnlineSession(lastUser);
-        if (restoredSession != null) {
-          await _handleSuccessfulLogin(
-            restoredSession.user,
-            restoredSession.password,
-            emit,
-          );
-          return;
-        }
-
         globalAuthNotifier.setOffline(true);
+        globalAuthNotifier.setRole(lastUser.role);
         emit(AuthOffline(lastUser));
       } else {
         globalAuthNotifier.setOffline(false);
+        globalAuthNotifier.setRole(null);
         emit(Unauthenticated());
       }
     } catch (_) {
@@ -517,48 +573,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       try {
         final lastUser = await _localDatasource.getLastLoggedInUser();
         if (lastUser != null) {
-          final restoredSession = await _tryRestoreOnlineSession(lastUser);
-          if (restoredSession != null) {
-            await _handleSuccessfulLogin(
-              restoredSession.user,
-              restoredSession.password,
-              emit,
-            );
-            return;
-          }
-
           globalAuthNotifier.setOffline(true);
+          globalAuthNotifier.setRole(lastUser.role);
           emit(AuthOffline(lastUser));
         } else {
           globalAuthNotifier.setOffline(false);
+          globalAuthNotifier.setRole(null);
           emit(Unauthenticated());
         }
       } catch (e) {
         globalAuthNotifier.setOffline(false);
+        globalAuthNotifier.setRole(null);
         emit(Unauthenticated());
       }
-    }
-  }
-
-  Future<({User user, String password})?> _tryRestoreOnlineSession(
-    LocalUser lastUser,
-  ) async {
-    if (_supabase == null) return null;
-
-    final password = await _localDatasource.getOnlinePassword(lastUser.email);
-    if (password == null || password.isEmpty) return null;
-
-    try {
-      final response = await _supabase!.auth.signInWithPassword(
-        email: lastUser.email,
-        password: password,
-      );
-      final user = response.user;
-      if (user == null) return null;
-      return (user: user, password: password);
-    } catch (e) {
-      debugPrint('Online session restore failed: $e');
-      return null;
     }
   }
 
@@ -572,6 +599,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       if (lastUser != null) {
         globalAuthNotifier.setOffline(true);
+        globalAuthNotifier.setRole(lastUser.role);
         emit(AuthOffline(lastUser));
       } else {
         emit(
@@ -636,64 +664,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
 
       if (localUser != null) {
-        // --- AUTO MIGRATION LOGIC START ---
-        if (_supabase != null) {
-          try {
-            // Try to Sign Up this local user to Supabase
-            final response = await _supabase!.auth.signUp(
-              email: localUser.email,
-              password: event.password, // We have the password from input
-              data: localUser.metadata,
-            );
-
-            if (response.user != null) {
-              // Migration Success! Update local credentials with new Remote ID
-              await _localDatasource.saveCredentials(
-                email: localUser.email,
-                password: event.password,
-                role: localUser.role.toString().split('.').last,
-                userId: response.user!.id,
-                metadata: localUser.metadata,
-                username: localUser.metadata['username'],
-              );
-
-              // Update User Entity in DB
-              final existingUser = await _userRepository.getUserByUsername(
-                localUser.metadata['username'] ?? '',
-              );
-              if (existingUser != null) {
-                await _userRepository.updateUser(
-                  existingUser.copyWith(
-                    remoteId: response.user!.id,
-                    syncStatus: 0, // Synced
-                  ),
-                );
-              }
-
-              // Log in again with new account to get session
-              final loginResponse = await _supabase!.auth.signInWithPassword(
-                email: localUser.email,
-                password: event.password,
-              );
-
-              if (loginResponse.user != null) {
-                await _handleSuccessfulLogin(
-                  loginResponse.user!,
-                  event.password,
-                  emit,
-                );
-                return;
-              }
-            }
-          } catch (migrationError) {
-            debugPrint('Migration failed: $migrationError');
-            // Continue to offline login if migration fails
-          }
-        }
-        // --- AUTO MIGRATION LOGIC END ---
-
+        // We intentionally do NOT self-signUp offline-provisioned accounts on
+        // login. Doing so created a brand-new server account whose
+        // handle_new_user() trigger forces role='viewer' -- silently
+        // downgrading e.g. a bendahara to viewer -- and duplicated an email
+        // that the admin's _pushUsers sync later tries to create again via the
+        // admin-users Edge Function, wedging that row. Offline-provisioned
+        // users stay offline until an admin's device syncs their account (which
+        // creates it server-side with the correct role); then they log in
+        // online normally.
         await _localDatasource.setLastLoggedInEmail(localUser.email);
         globalAuthNotifier.setOffline(true);
+        globalAuthNotifier.setRole(localUser.role);
         emit(AuthOffline(localUser));
       } else {
         emit(
@@ -714,7 +696,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     String password,
     Emitter<AuthState> emit,
   ) async {
-    final role = _parseRole(user.userMetadata);
+    final role = await _resolveRole(user);
     final username = (user.userMetadata?['username'] as String?)?.toLowerCase();
 
     // Save Credentials for Offline
@@ -725,10 +707,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       userId: user.id,
       metadata: user.userMetadata ?? {},
       username: username,
-    );
-    await _localDatasource.saveOnlinePassword(
-      email: user.email!,
-      password: password,
     );
 
     // Sync User to Local DB
@@ -755,6 +733,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           ),
         );
       }
+    } else if (existingUser.syncStatus == 2) {
+      // Preserve an offline profile edit that hasn't synced yet (pendingUpdate):
+      // overwriting it with the server's stale values here would lose it. Only
+      // refresh the server-authoritative role + remoteId; keep the edited
+      // fields and the pending status so the sync engine pushes them up.
+      await _userRepository.updateUser(
+        existingUser.copyWith(
+          remoteId: user.id,
+          role: role.toString().split('.').last,
+        ),
+      );
     } else {
       await _userRepository.updateUser(
         domain.UserEntity(
@@ -770,12 +759,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
 
     globalAuthNotifier.setOffline(false);
+    globalAuthNotifier.setRole(role);
     emit(Authenticated(user, role: role));
   }
 
-  UserRole _parseRole(Map<String, dynamic>? metadata) {
-    if (metadata == null) return UserRole.viewer;
-    final roleStr = metadata['role'] as String?;
+  UserRole _roleFromName(String? roleStr) {
     switch (roleStr) {
       case 'admin':
         return UserRole.admin;
@@ -790,11 +778,57 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
   }
 
+  /// Resolves the role this session is allowed to act with.
+  ///
+  /// `user_metadata` is NOT an authorization source: any authenticated user can
+  /// rewrite it with `auth.updateUser(data: {'role': 'admin'})`, which used to
+  /// be enough to unlock every admin screen and route guard in the app. RLS
+  /// still refused the writes server-side, so the damage was local ghost data
+  /// -- but the app's own access control was trivially bypassable.
+  ///
+  /// `public.profiles.role` is the real thing: only an admin/ketua may change
+  /// it (enforced by the `WITH CHECK` on the profiles UPDATE policy).
+  ///
+  /// When the server is unreachable we fall back to the role last confirmed BY
+  /// the server for this account, and to `viewer` if there is none. We never
+  /// fall back to metadata, otherwise an attacker could forge the claim and
+  /// then simply go offline to make it stick.
+  Future<UserRole> _resolveRole(User user) async {
+    final client = _supabase;
+    if (client != null) {
+      try {
+        final row = await client
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+        final serverRole = row?['role'] as String?;
+        if (serverRole != null) {
+          final email = user.email;
+          if (email != null) {
+            await _localDatasource.saveStoredRole(email, serverRole);
+          }
+          return _roleFromName(serverRole);
+        }
+      } catch (e) {
+        debugPrint('Could not read profiles.role, using cached role: $e');
+      }
+    }
+
+    final email = user.email;
+    if (email != null) {
+      final cached = await _localDatasource.getStoredRole(email);
+      if (cached != null) return _roleFromName(cached);
+    }
+    return UserRole.viewer;
+  }
+
   Future<void> _onLogoutRequested(
     LogoutRequested event,
     Emitter<AuthState> emit,
   ) async {
     globalAuthNotifier.setOffline(false);
+    globalAuthNotifier.setRole(null);
     try {
       if (_supabase != null) {
         await _supabase!.auth.signOut();
