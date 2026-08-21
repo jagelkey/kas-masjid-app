@@ -54,7 +54,13 @@ class TransactionRepositoryImpl implements TransactionRepository {
 
   @override
   Future<List<domain.Transaction>> getTransactions() async {
-    final rows = await _db.select(_db.transactions).get();
+    final rows = await (_db.select(_db.transactions)
+          ..where(
+            (t) => t.syncStatus.isNotValue(
+              domain.SyncStatus.pendingDelete.index,
+            ),
+          ))
+        .get();
     return rows.map((row) => _mapToDomain(row)).toList();
   }
 

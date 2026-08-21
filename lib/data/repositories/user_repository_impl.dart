@@ -52,9 +52,7 @@ class UserRepositoryImpl implements UserRepository {
               username: Value(user.username),
               fullName: Value(user.fullName),
               role: Value(user.role),
-              syncStatus: Value(
-                domain_status.SyncStatus.values[user.syncStatus],
-              ),
+              syncStatus: Value(domain_status.SyncStatus.pendingCreate),
             ),
           );
 
@@ -69,6 +67,21 @@ class UserRepositoryImpl implements UserRepository {
   @override
   Future<void> updateUser(domain.UserEntity user) async {
     if (user.id == null) return;
+
+    // Check existing sync status to preserve unsynced state.
+    final existing = await (_db.select(
+      _db.users,
+    )..where((t) => t.id.equals(user.id!))).getSingleOrNull();
+    if (existing == null) return;
+
+    // Preserve pendingCreate: a new user that hasn't been synced yet should
+    // remain pendingCreate even after an edit — otherwise the update would
+    // mark it as synced locally without ever pushing to the server.
+    final newSyncStatus =
+        existing.syncStatus == domain_status.SyncStatus.pendingCreate
+            ? domain_status.SyncStatus.pendingCreate
+            : domain_status.SyncStatus.pendingUpdate;
+
     await _db.transaction(() async {
       await (_db.update(_db.users)..where((t) => t.id.equals(user.id!))).write(
         UsersCompanion(
@@ -76,7 +89,7 @@ class UserRepositoryImpl implements UserRepository {
           fullName: Value(user.fullName),
           username: Value(user.username),
           role: Value(user.role),
-          syncStatus: Value(domain_status.SyncStatus.values[user.syncStatus]),
+          syncStatus: Value(newSyncStatus),
           updatedAt: Value(DateTime.now()),
         ),
       );

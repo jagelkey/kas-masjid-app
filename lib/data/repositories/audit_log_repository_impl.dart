@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:injectable/injectable.dart';
 import 'package:masjid_app/data/datasources/local/app_database.dart';
 import 'package:masjid_app/data/datasources/local/auth_local_datasource.dart';
@@ -36,29 +37,28 @@ class AuditLogRepositoryImpl implements AuditLogRepository {
     String? description,
   }) async {
     // Get current user ID
-    // Since we cannot easily get it from AuthLocalDatasource without modification,
-    // let's try to fix that first. But for now, let's rely on Supabase or 'offline'.
     String userId = await _getCurrentUserId() ?? 'system';
 
-    // However, if we are offline, we really want the correct user ID.
-    // Let's assume the BLOC/Service calling this might pass it?
-    // But the interface doesn't have it.
-
-    // Let's stick with this implementation and improve _getCurrentUserId later.
-
-    await _db
-        .into(_db.auditLogs)
-        .insert(
-          AuditLogsCompanion(
-            userId: Value(userId),
-            action: Value(action),
-            targetTable: Value(targetTable),
-            recordId: Value(recordId),
-            description: Value(description),
-            syncStatus: Value(domain_status.SyncStatus.pendingCreate),
-            createdAt: Value(DateTime.now()),
-          ),
-        );
+    // Wrap in try/catch: audit logging failure must NOT roll back the
+    // business operation that triggered it. Fire-and-forget with a
+    // debug warning instead.
+    try {
+      await _db
+          .into(_db.auditLogs)
+          .insert(
+            AuditLogsCompanion(
+              userId: Value(userId),
+              action: Value(action),
+              targetTable: Value(targetTable),
+              recordId: Value(recordId),
+              description: Value(description),
+              syncStatus: Value(domain_status.SyncStatus.pendingCreate),
+              createdAt: Value(DateTime.now()),
+            ),
+          );
+    } catch (e) {
+      debugPrint('Warning: Failed to write audit log: $e');
+    }
   }
 
   @override

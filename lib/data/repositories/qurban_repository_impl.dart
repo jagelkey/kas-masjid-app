@@ -341,6 +341,41 @@ class QurbanRepositoryImpl implements QurbanRepository {
   Future<void> addPayment(QurbanPayment payment) async {
     await _db.transaction(() async {
       final participant = await _getParticipantOrThrow(payment.participantId);
+
+      // Validate monthlyAmount > 0 to prevent division-by-zero in progress calc.
+      if (participant.monthlyAmount <= 0) {
+        throw Exception(
+          'Nominal cicilan peserta tidak valid (Rp 0). '
+          'Edit data peserta terlebih dahulu.',
+        );
+      }
+
+      // Duplicate payment guard: reject if same participant, same amount,
+      // and same calendar day already exists (prevents double-tap submissions).
+      final startOfDay = DateTime(
+        payment.paymentDate.year,
+        payment.paymentDate.month,
+        payment.paymentDate.day,
+      );
+      final endOfDay = startOfDay.add(const Duration(days: 1));
+      final existingPayments = await (_db.select(_db.qurbanPayments)
+            ..where((t) => t.participantId.equals(payment.participantId))
+            ..where((t) => t.amount.equals(payment.amount))
+            ..where(
+              (t) => t.paymentDate.isBetweenValues(startOfDay, endOfDay),
+            )
+            ..where(
+              (t) => t.syncStatus.isNotValue(
+                tx_domain.SyncStatus.pendingDelete.index,
+              ),
+            ))
+          .get();
+      if (existingPayments.isNotEmpty) {
+        throw Exception(
+          'Pembayaran dengan nominal yang sama untuk tanggal ini sudah ada.',
+        );
+      }
+
       final paymentRemoteId = payment.remoteId ?? _uuid.v4();
       final transactionRemoteId = _uuid.v4();
 
