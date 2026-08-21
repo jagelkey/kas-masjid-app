@@ -63,6 +63,14 @@ class _QurbanPaymentFormPageState extends State<QurbanPaymentFormPage> {
           Navigator.pop(context);
         } else if (state is QurbanOperationFailure) {
           setState(() => _submitted = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.operationMessage),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          }
         }
       },
       child: Scaffold(

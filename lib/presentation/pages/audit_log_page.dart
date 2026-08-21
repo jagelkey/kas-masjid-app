@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
+import 'package:masjid_app/core/theme/app_theme.dart';
 import 'package:masjid_app/domain/entities/audit_log.dart';
 import 'package:masjid_app/domain/repositories/audit_log_repository.dart';
 import 'package:masjid_app/presentation/blocs/auth/auth_bloc.dart';
@@ -100,7 +101,20 @@ class _AuditLogPageState extends State<AuditLogPage> {
                       return const Center(child: CircularProgressIndicator());
                     }
                     if (snapshot.hasError) {
-                      return Center(child: Text('Error: ${snapshot.error}'));
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              size: 48,
+                              color: AppColors.danger,
+                            ),
+                            const SizedBox(height: 12),
+                            const Text('Gagal memuat audit log'),
+                          ],
+                        ),
+                      );
                     }
 
                     final all = snapshot.data ?? [];

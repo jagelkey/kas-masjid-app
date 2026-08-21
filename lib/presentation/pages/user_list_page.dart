@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:masjid_app/core/services/admin_user_service.dart';
+import 'package:masjid_app/core/theme/app_theme.dart';
 import 'package:masjid_app/data/datasources/local/auth_local_datasource.dart';
 import 'package:masjid_app/domain/entities/transaction.dart' as domain_status;
 import 'package:masjid_app/domain/entities/user.dart';
@@ -54,7 +55,25 @@ class _UserListPageState extends State<UserListPage> {
                 return const Center(child: CircularProgressIndicator());
               }
               if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 48,
+                        color: AppColors.danger,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('Gagal memuat data pengguna'),
+                      const SizedBox(height: 8),
+                      FilledButton.tonal(
+                        onPressed: () => setState(() {}),
+                        child: const Text('Coba Lagi'),
+                      ),
+                    ],
+                  ),
+                );
               }
 
               final users = snapshot.data ?? [];
@@ -90,6 +109,7 @@ class _UserListPageState extends State<UserListPage> {
     final passwordController = TextEditingController();
     String selectedRole = 'viewer';
     bool obscurePassword = true;
+    final formKey = GlobalKey<FormState>();
 
     showDialog(
       context: context,
@@ -98,71 +118,117 @@ class _UserListPageState extends State<UserListPage> {
         content: StatefulBuilder(
           builder: (context, setState) {
             return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nama Lengkap',
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nama Lengkap',
+                      ),
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Nama wajib diisi';
+                        }
+                        if (value.trim().length < 3) {
+                          return 'Nama minimal 3 karakter';
+                        }
+                        return null;
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: usernameController,
-                    decoration: const InputDecoration(labelText: 'Username'),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: emailController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscurePassword
-                              ? Icons.visibility
-                              : Icons.visibility_off,
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: usernameController,
+                      decoration: const InputDecoration(labelText: 'Username'),
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Username wajib diisi';
+                        }
+                        if (value.trim().length < 3) {
+                          return 'Username minimal 3 karakter';
+                        }
+                        if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value.trim())) {
+                          return 'Username hanya huruf, angka, underscore';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: emailController,
+                      decoration: const InputDecoration(labelText: 'Email'),
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Email wajib diisi';
+                        }
+                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.trim())) {
+                          return 'Format email tidak valid';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: passwordController,
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscurePassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              obscurePassword = !obscurePassword;
+                            });
+                          },
                         ),
-                        onPressed: () {
-                          setState(() {
-                            obscurePassword = !obscurePassword;
-                          });
-                        },
                       ),
+                      obscureText: obscurePassword,
+                      textInputAction: TextInputAction.done,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Password wajib diisi';
+                        }
+                        if (value.length < 6) {
+                          return 'Password minimal 6 karakter';
+                        }
+                        return null;
+                      },
                     ),
-                    obscureText: obscurePassword,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(selectedRole),
-                    initialValue: selectedRole,
-                    decoration: const InputDecoration(labelText: 'Role'),
-                    items: const [
-                      DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                      DropdownMenuItem(value: 'ketua', child: Text('Ketua')),
-                      DropdownMenuItem(
-                        value: 'bendahara',
-                        child: Text('Bendahara'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'sekretaris',
-                        child: Text('Sekretaris'),
-                      ),
-                      DropdownMenuItem(value: 'viewer', child: Text('Viewer')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => selectedRole = value);
-                      }
-                    },
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey(selectedRole),
+                      initialValue: selectedRole,
+                      decoration: const InputDecoration(labelText: 'Role'),
+                      items: const [
+                        DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                        DropdownMenuItem(value: 'ketua', child: Text('Ketua')),
+                        DropdownMenuItem(
+                          value: 'bendahara',
+                          child: Text('Bendahara'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'sekretaris',
+                          child: Text('Sekretaris'),
+                        ),
+                        DropdownMenuItem(value: 'viewer', child: Text('Viewer')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => selectedRole = value);
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -174,10 +240,7 @@ class _UserListPageState extends State<UserListPage> {
           ),
           ElevatedButton(
             onPressed: () {
-              if (nameController.text.isNotEmpty &&
-                  usernameController.text.isNotEmpty &&
-                  emailController.text.isNotEmpty &&
-                  passwordController.text.isNotEmpty) {
+              if (formKey.currentState!.validate()) {
                 Navigator.pop(ctx);
                 _addNewUser(
                   nameController.text,
@@ -185,10 +248,6 @@ class _UserListPageState extends State<UserListPage> {
                   emailController.text,
                   selectedRole,
                   passwordController.text,
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Semua field harus diisi')),
                 );
               }
             },
@@ -483,6 +542,7 @@ class _UserListPageState extends State<UserListPage> {
     final passwordController = TextEditingController();
     String selectedRole = user.role;
     bool obscurePassword = true;
+    final formKey = GlobalKey<FormState>();
 
     showDialog(
       context: context,
@@ -491,72 +551,115 @@ class _UserListPageState extends State<UserListPage> {
         content: StatefulBuilder(
           builder: (context, setState) {
             return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nama Lengkap',
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nama Lengkap',
+                      ),
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Nama wajib diisi';
+                        }
+                        if (value.trim().length < 3) {
+                          return 'Nama minimal 3 karakter';
+                        }
+                        return null;
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: usernameController,
-                    decoration: const InputDecoration(labelText: 'Username'),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: emailController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Password Baru (Opsional)',
-                      helperText: 'Kosongkan jika tidak ingin mengubah',
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscurePassword
-                              ? Icons.visibility
-                              : Icons.visibility_off,
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: usernameController,
+                      decoration: const InputDecoration(labelText: 'Username'),
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Username wajib diisi';
+                        }
+                        if (value.trim().length < 3) {
+                          return 'Username minimal 3 karakter';
+                        }
+                        if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value.trim())) {
+                          return 'Username hanya huruf, angka, underscore';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: emailController,
+                      decoration: const InputDecoration(labelText: 'Email'),
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Email wajib diisi';
+                        }
+                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.trim())) {
+                          return 'Format email tidak valid';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: passwordController,
+                      decoration: InputDecoration(
+                        labelText: 'Password Baru (Opsional)',
+                        helperText: 'Kosongkan jika tidak ingin mengubah',
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscurePassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              obscurePassword = !obscurePassword;
+                            });
+                          },
                         ),
-                        onPressed: () {
-                          setState(() {
-                            obscurePassword = !obscurePassword;
-                          });
-                        },
                       ),
+                      obscureText: obscurePassword,
+                      textInputAction: TextInputAction.done,
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty && value.length < 6) {
+                          return 'Password minimal 6 karakter';
+                        }
+                        return null;
+                      },
                     ),
-                    obscureText: obscurePassword,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(selectedRole),
-                    initialValue: selectedRole,
-                    decoration: const InputDecoration(labelText: 'Role'),
-                    items: const [
-                      DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                      DropdownMenuItem(value: 'ketua', child: Text('Ketua')),
-                      DropdownMenuItem(
-                        value: 'bendahara',
-                        child: Text('Bendahara'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'sekretaris',
-                        child: Text('Sekretaris'),
-                      ),
-                      DropdownMenuItem(value: 'viewer', child: Text('Viewer')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => selectedRole = value);
-                      }
-                    },
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey(selectedRole),
+                      initialValue: selectedRole,
+                      decoration: const InputDecoration(labelText: 'Role'),
+                      items: const [
+                        DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                        DropdownMenuItem(value: 'ketua', child: Text('Ketua')),
+                        DropdownMenuItem(
+                          value: 'bendahara',
+                          child: Text('Bendahara'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'sekretaris',
+                          child: Text('Sekretaris'),
+                        ),
+                        DropdownMenuItem(value: 'viewer', child: Text('Viewer')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => selectedRole = value);
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -568,15 +671,17 @@ class _UserListPageState extends State<UserListPage> {
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(ctx);
-              _updateUserFull(
-                user,
-                nameController.text,
-                usernameController.text,
-                emailController.text,
-                selectedRole,
-                passwordController.text,
-              );
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx);
+                _updateUserFull(
+                  user,
+                  nameController.text,
+                  usernameController.text,
+                  emailController.text,
+                  selectedRole,
+                  passwordController.text,
+                );
+              }
             },
             child: const Text('Simpan'),
           ),
