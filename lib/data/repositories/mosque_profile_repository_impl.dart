@@ -34,7 +34,8 @@ class MosqueProfileRepositoryImpl implements MosqueProfileRepository {
     String? remoteUrl;
 
     if (row.logoPath != null) {
-      if (row.logoPath!.startsWith('http')) {
+      if (row.logoPath!.startsWith('http://') ||
+          row.logoPath!.startsWith('https://')) {
         remoteUrl = row.logoPath;
       } else {
         localPath = row.logoPath;

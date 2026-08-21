@@ -24,23 +24,8 @@ class PdfService {
     final font = await PdfGoogleFonts.interRegular();
     final boldFont = await PdfGoogleFonts.interBold();
 
-    pw.MemoryImage? logoImage;
-    try {
-      if (profile?.logoUrl != null) {
-        final request = await HttpClient().getUrl(Uri.parse(profile!.logoUrl!));
-        final response = await request.close();
-        final bytes = await response.expand((element) => element).toList();
-        logoImage = pw.MemoryImage(Uint8List.fromList(bytes));
-      } else if (profile?.logoPath != null) {
-        final file = File(profile!.logoPath!);
-        if (await file.exists()) {
-          final bytes = await file.readAsBytes();
-          logoImage = pw.MemoryImage(bytes);
-        }
-      }
-    } catch (e) {
-      debugPrint('Error loading logo for PDF: $e');
-    }
+    // Single, timeout-guarded logo loader (was duplicated inline here).
+    final logoImage = await _loadLogo(profile);
 
     doc.addPage(
       pw.MultiPage(
@@ -196,9 +181,21 @@ class PdfService {
   Future<pw.MemoryImage?> _loadLogo(MosqueProfile? profile) async {
     try {
       if (profile?.logoUrl != null) {
-        final request = await HttpClient().getUrl(Uri.parse(profile!.logoUrl!));
-        final response = await request.close();
-        final bytes = await response.expand((element) => element).toList();
+        // Bounded network wait: without a timeout a stalled logo download
+        // blocks the whole print sheet indefinitely on poor connectivity
+        // (this is an offline-first app). Fall back to no logo on timeout.
+        final client = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 5);
+        final request = await client
+            .getUrl(Uri.parse(profile!.logoUrl!))
+            .timeout(const Duration(seconds: 5));
+        final response = await request.close().timeout(
+          const Duration(seconds: 8),
+        );
+        final bytes = await response
+            .expand((element) => element)
+            .toList()
+            .timeout(const Duration(seconds: 8));
         return pw.MemoryImage(Uint8List.fromList(bytes));
       } else if (profile?.logoPath != null) {
         final file = File(profile!.logoPath!);

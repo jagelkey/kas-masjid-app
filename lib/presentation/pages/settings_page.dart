@@ -119,9 +119,26 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: 'Keluar dari sesi pengguna saat ini',
               accentColor: AppColors.danger,
               trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                context.read<AuthBloc>().add(LogoutRequested());
-                context.go('/login');
+              onTap: () async {
+                // Navigating on a fixed delay was a guess: too short and the
+                // user lands on /login while signOut() is still in flight, too
+                // long and they stare at Settings for nothing. _onLogoutRequested
+                // awaits signOut() + clearCredentials() and then emits
+                // Unauthenticated outside its try/catch, so that state is the
+                // completion signal -- wait for it instead.
+                final authBloc = context.read<AuthBloc>();
+                final router = GoRouter.of(context);
+                authBloc.add(LogoutRequested());
+                // Bounded only so a signOut() stalled on a dead connection
+                // cannot strand the user on this page with no feedback; the
+                // state above is the real mechanism, not this timeout.
+                await authBloc.stream
+                    .firstWhere((s) => s is Unauthenticated)
+                    .timeout(
+                      const Duration(seconds: 10),
+                      onTimeout: () => Unauthenticated(),
+                    );
+                router.go('/login');
               },
             ),
           ],
@@ -236,24 +253,43 @@ class _SettingsPageState extends State<SettingsPage> {
     final addressController = TextEditingController(
       text: currentProfile.address,
     );
+    final formKey = GlobalKey<FormState>();
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Edit Profil Masjid'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Nama Masjid'),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: addressController,
-              decoration: const InputDecoration(labelText: 'Alamat'),
-            ),
-          ],
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Nama Masjid'),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Nama masjid wajib diisi';
+                  }
+                  if (value.trim().length < 3) {
+                    return 'Nama minimal 3 karakter';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: addressController,
+                decoration: const InputDecoration(labelText: 'Alamat'),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Alamat wajib diisi';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -262,11 +298,13 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           FilledButton(
             onPressed: () {
+              if (!formKey.currentState!.validate()) return;
               final newProfile = MosqueProfile(
                 id: currentProfile.id,
-                name: nameController.text,
-                address: addressController.text,
+                name: nameController.text.trim(),
+                address: addressController.text.trim(),
                 logoPath: currentProfile.logoPath,
+                logoUrl: currentProfile.logoUrl,
               );
               context.read<ProfileBloc>().add(SaveProfile(newProfile));
               Navigator.pop(ctx);

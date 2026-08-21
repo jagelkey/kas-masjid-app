@@ -197,6 +197,9 @@ class QurbanParticipantDetailPage extends StatelessWidget {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text(state.operationMessage)));
+          if (state.shouldPop && context.mounted) {
+            context.pop();
+          }
         } else if (state is QurbanOperationFailure) {
           ScaffoldMessenger.of(
             context,
@@ -333,7 +336,9 @@ class QurbanParticipantDetailPage extends StatelessWidget {
               context.read<QurbanBloc>().add(
                 DeleteQurbanParticipant(participantId),
               );
-              context.pop();
+              // Navigation is handled by BlocListener when shouldPop is true
+              // on QurbanOperationSuccess — no immediate pop here to avoid
+              // navigating away before the async delete completes.
             },
             child: const Text('Hapus'),
           ),
@@ -698,7 +703,11 @@ class _ParticipantTile extends StatelessWidget {
               CircleAvatar(
                 backgroundColor: statusColor.withValues(alpha: 0.1),
                 foregroundColor: statusColor,
-                child: Text(participant.name[0].toUpperCase()),
+                child: Text(
+                  participant.name.isNotEmpty
+                      ? participant.name[0].toUpperCase()
+                      : '?',
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(

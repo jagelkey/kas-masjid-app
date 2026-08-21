@@ -220,7 +220,27 @@ class TransactionListPage extends StatelessWidget {
               },
             );
           }
-          return const Center(child: Text('Error loading data'));
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: AppColors.danger,
+                ),
+                const SizedBox(height: 12),
+                const Text('Gagal memuat transaksi'),
+                const SizedBox(height: 8),
+                FilledButton.tonal(
+                  onPressed: () {
+                    context.read<TransactionBloc>().add(LoadTransactions());
+                  },
+                  child: const Text('Coba Lagi'),
+                ),
+              ],
+            ),
+          );
         },
       ),
       floatingActionButton: BlocBuilder<AuthBloc, AuthState>(

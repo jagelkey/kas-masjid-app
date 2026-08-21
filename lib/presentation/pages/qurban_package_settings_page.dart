@@ -118,9 +118,32 @@ class QurbanPackageSettingsPage extends StatelessWidget {
               if (package?.id != null)
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(dialogContext);
-                    context.read<QurbanBloc>().add(
-                      DeleteQurbanPackage(package!.id!),
+                    // Show confirmation dialog before deleting
+                    showDialog(
+                      context: dialogContext,
+                      builder: (confirmCtx) => AlertDialog(
+                        title: const Text('Hapus Paket?'),
+                        content: Text(
+                          'Paket "${package!.name}" akan dihapus. '
+                          'Data peserta yang sudah ada tidak terpengaruh.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(confirmCtx),
+                            child: const Text('Batal'),
+                          ),
+                          FilledButton(
+                            onPressed: () {
+                              Navigator.pop(confirmCtx);
+                              Navigator.pop(dialogContext);
+                              context.read<QurbanBloc>().add(
+                                DeleteQurbanPackage(package.id!),
+                              );
+                            },
+                            child: const Text('Hapus'),
+                          ),
+                        ],
+                      ),
                     );
                   },
                   child: const Text('Hapus'),

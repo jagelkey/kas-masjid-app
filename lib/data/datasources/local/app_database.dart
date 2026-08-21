@@ -202,6 +202,9 @@ class AppDatabase extends _$AppDatabase {
     return MigrationStrategy(
       onCreate: (Migrator m) async {
         await m.createAll();
+        // Unique partial indexes on remote_id for all syncable tables.
+        // Prevents duplicate local rows for the same remote record caused by
+        // sync retry bugs or pull-merge errors.
         await customStatement(
           'CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_remote_id_unique '
           'ON transactions(remote_id) WHERE remote_id IS NOT NULL',
@@ -209,6 +212,22 @@ class AppDatabase extends _$AppDatabase {
         await customStatement(
           'CREATE UNIQUE INDEX IF NOT EXISTS idx_qurban_payments_remote_id_unique '
           'ON qurban_payments(remote_id) WHERE remote_id IS NOT NULL',
+        );
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_qurban_packages_remote_id_unique '
+          'ON qurban_packages(remote_id) WHERE remote_id IS NOT NULL',
+        );
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_qurban_participants_remote_id_unique '
+          'ON qurban_participants(remote_id) WHERE remote_id IS NOT NULL',
+        );
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_remote_id_unique '
+          'ON activities(remote_id) WHERE remote_id IS NOT NULL',
+        );
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_logs_remote_id_unique '
+          'ON audit_logs(remote_id) WHERE remote_id IS NOT NULL',
         );
       },
       onUpgrade: (Migrator m, int from, int to) async {
@@ -281,17 +300,12 @@ class AppDatabase extends _$AppDatabase {
           } catch (e) {
             debugPrint('Migration step (from<6, qurbanPayments table): $e');
           }
-        }
-
-        // Ensure new tables are created during upgrade
-        // Check if auditLogs table exists, if not create it
-        // Since we can't easily check existence in Drift without custom query,
-        // we can wrap createTable in try-catch or rely on Drift's createTable (which fails if exists)
-        try {
-          await m.createTable(auditLogs);
-        } catch (e) {
-          // Table likely already exists -- logged in case it's something else.
-          debugPrint('Migration step (auditLogs table): $e');
+          // auditLogs table introduced alongside qurban tables in v6.
+          try {
+            await m.createTable(auditLogs);
+          } catch (e) {
+            debugPrint('Migration step (from<6, auditLogs table): $e');
+          }
         }
 
         if (from < 7) {
@@ -322,6 +336,42 @@ class AppDatabase extends _$AppDatabase {
             debugPrint(
               'Skipping qurban_payments.remote_id unique index: $e',
             );
+          }
+          try {
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_qurban_packages_remote_id_unique '
+              'ON qurban_packages(remote_id) WHERE remote_id IS NOT NULL',
+            );
+          } catch (e) {
+            debugPrint(
+              'Skipping qurban_packages.remote_id unique index: $e',
+            );
+          }
+          try {
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_qurban_participants_remote_id_unique '
+              'ON qurban_participants(remote_id) WHERE remote_id IS NOT NULL',
+            );
+          } catch (e) {
+            debugPrint(
+              'Skipping qurban_participants.remote_id unique index: $e',
+            );
+          }
+          try {
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_remote_id_unique '
+              'ON activities(remote_id) WHERE remote_id IS NOT NULL',
+            );
+          } catch (e) {
+            debugPrint('Skipping activities.remote_id unique index: $e');
+          }
+          try {
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_logs_remote_id_unique '
+              'ON audit_logs(remote_id) WHERE remote_id IS NOT NULL',
+            );
+          } catch (e) {
+            debugPrint('Skipping audit_logs.remote_id unique index: $e');
           }
         }
       },
@@ -379,6 +429,7 @@ class AppDatabase extends _$AppDatabase {
       await delete(qurbanPayments).go();
       await delete(qurbanParticipants).go();
       await delete(qurbanPackages).go();
+      await delete(auditLogs).go();
     });
   }
 }

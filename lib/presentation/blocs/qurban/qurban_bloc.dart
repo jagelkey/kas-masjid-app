@@ -184,19 +184,23 @@ class QurbanLoaded extends QurbanState {
 
 class QurbanOperationSuccess extends QurbanLoaded {
   final String operationMessage;
+  final bool shouldPop;
 
-  QurbanOperationSuccess(QurbanLoaded state, this.operationMessage)
-    : super(
-        packages: state.packages,
-        progress: state.progress,
-        filteredProgress: state.filteredProgress,
-        summary: state.summary,
-        query: state.query,
-        statusFilter: state.statusFilter,
-      );
+  QurbanOperationSuccess(
+    QurbanLoaded state,
+    this.operationMessage, {
+    this.shouldPop = false,
+  }) : super(
+         packages: state.packages,
+         progress: state.progress,
+         filteredProgress: state.filteredProgress,
+         summary: state.summary,
+         query: state.query,
+         statusFilter: state.statusFilter,
+       );
 
   @override
-  List<Object?> get props => [...super.props, operationMessage];
+  List<Object?> get props => [...super.props, operationMessage, shouldPop];
 }
 
 class QurbanOperationFailure extends QurbanLoaded {
@@ -364,6 +368,7 @@ class QurbanBloc extends Bloc<QurbanEvent, QurbanState> {
       () => _repository.deleteParticipant(event.id),
       'Peserta qurban berhasil dihapus',
       'Gagal menghapus peserta qurban',
+      shouldPop: true,
     );
   }
 
@@ -409,6 +414,7 @@ class QurbanBloc extends Bloc<QurbanEvent, QurbanState> {
     String successMessage,
     String failurePrefix, {
     bool refreshPackages = false,
+    bool shouldPop = false,
   }) async {
     try {
       await operation();
@@ -421,6 +427,7 @@ class QurbanBloc extends Bloc<QurbanEvent, QurbanState> {
           QurbanOperationSuccess(
             current.copyWith(packages: packages),
             successMessage,
+            shouldPop: shouldPop,
           ),
         );
       }
